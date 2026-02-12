@@ -1,6 +1,8 @@
 # DoroPlayer
 
-基于 Android 的视频脚本播放器，支持与 `.funscript` 脚本同步，并将轴控制指令通过多种连接方式发送至osr等设备。
+**简体中文** | [English](README.en.md)
+
+基于 Android 的视频脚本播放器，支持与 `.funscript` 脚本同步，并将轴控制指令通过多种连接方式发送至 OSR 等设备。
 
 ## 功能概览
 
@@ -37,7 +39,7 @@
 ```bash
 # 克隆仓库
 git clone https://github.com/niaonhu001/DoroPlayer.git
-cd FunPlayer
+cd DoroPlayer
 
 # 构建 Debug 包
 ./gradlew assembleDebug

@@ -1,3 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">DoroPlayer</string>
+    <string name="app_name">FunPlayer</string>
+    <!-- 底部导航 -->
+    <string name="tab_device">设备</string>
+    <string name="tab_home">主页</string>
+    <string name="tab_settings">设置</string>
+    <!-- 主页 -->
+    <string name="search_placeholder">搜索视频名称、标签…</string>
+    <string name="tag_all">全部</string>
+    <string name="tag_select_title">选择标签</string>
+    <string name="done">完成</string>
+    <string name="video_empty_hint">暂无视频\n请到「设置」中选择视频文件夹并重新扫描</string>
+    <!-- 视频详情 -->
+    <string name="video_detail_title">视频详情</string>
+    <string name="back">返回</string>
+    <string name="exit_fullscreen">退出全屏</string>
+    <string name="rotate_fullscreen">旋转全屏方向</string>
+    <string name="fullscreen_play">全屏播放</string>
+    <string name="cover">封面</string>
+    <string name="duration_format">时长 %s</string>
+    <string name="no_play_uri">无播放地址（请从设置中选择视频文件夹并重新扫描）</string>
+    <string name="video_duration_format">片长 %s</string>
+    <string name="label_tags">标签</string>
+    <string name="add_tag_btn">+</string>
+    <string name="add_tag_done_btn">−</string>
+    <string name="script_heatmap">脚本热力图</string>
+    <string name="no_script">无配套脚本</string>
+    <string name="script_loading">脚本加载中或格式不支持</string>
+    <string name="axis_command">轴控制指令</string>
+    <!-- 添加标签对话框 -->
+    <string name="add_tag_dialog_title">添加标签</string>
+    <string name="tag_name_label">标签名称</string>
+    <string name="ok">确定</string>
+    <string name="cancel">取消</string>
+    <!-- 设备设置 -->
+    <string name="bt_scan_permission_denied">缺少蓝牙权限，无法扫描设备</string>
+    <string name="device_settings_title">设备设置</string>
+    <string name="connection_settings">连接设置</string>
+    <string name="connection_switch">连接开关</string>
+    <string name="connection_test">连接测试</string>
+    <string name="connection_test_sent">连接测试已发送</string>
+    <string name="connection_test_failed">连接测试发送失败</string>
+    <string name="connection_test_sending">发送中…</string>
+    <string name="connection_type_label">连接方式</string>
+    <string name="serial_connection">串口连接</string>
+    <string name="bt_serial_connection">蓝牙串口</string>
+    <string name="tcp_connection">TCP</string>
+    <string name="udp_connection">UDP</string>
+    <string name="handy_connection">The Handy</string>
+    <string name="serial_device">串口设备</string>
+    <string name="serial_no_device">未检测到串口设备</string>
+    <string name="select_serial_device">选择串口设备</string>
+    <string name="baud_rate">波特率</string>
+    <string name="bt_serial_device">蓝牙串口设备</string>
+    <string name="bt_serial_no_device">未发现已配对设备</string>
+    <string name="select_bt_device">选择已配对设备</string>
+    <string name="device_address_mac">设备地址 (MAC)</string>
+    <string name="mac_placeholder">AA:BB:CC:DD:EE:FF</string>
+    <string name="baud_rate_bt_hint">波特率（蓝牙串口一般无需设置）</string>
+    <string name="ip_address">IP 地址</string>
+    <string name="port_number">端口号</string>
+    <string name="send_format_title">发送信息文本格式</string>
+    <string name="prefix">前缀</string>
+    <string name="suffix">尾缀</string>
+    <string name="handy_bluetooth_device">蓝牙设备</string>
+    <string name="scan">扫描</string>
+    <string name="scanning">扫描中…</string>
+    <string name="scanning_devices">正在扫描可用设备…</string>
+    <string name="select_handy_device">选择蓝牙设备</string>
+    <string name="handy_no_device">未扫描到设备</string>
+    <string name="axis">轴</string>
+    <string name="handy_key">密钥</string>
+    <string name="output_range_title">各轴输出范围 0%–100%</string>
+    <string name="output_range_settings">输出范围设置</string>
+    <!-- 软件设置 -->
+    <string name="app_settings_title">软件设置</string>
+    <string name="video_library_path">视频库路径</string>
+    <string name="current_path_format">当前路径：%s</string>
+    <string name="select_folder">选择文件夹…</string>
+    <string name="rescan">重新扫描</string>
+    <string name="player_settings">播放器设置</string>
+    <string name="default_play_behavior">默认播放行为</string>
+    <string name="play_stop_example">播放完停止（示例）</string>
+    <string name="subtitle_settings">字幕设置</string>
+    <string name="subtitle_default_on">默认启用字幕</string>
+    <string name="language_settings">语言</string>
+    <string name="interface_language">界面语言</string>
+    <string name="follow_system">跟随系统</string>
+    <string name="simplified_chinese">简体中文</string>
+    <string name="english">English</string>
+    <string name="theme_appearance">主题与外观</string>
+    <string name="dark_mode">深色模式</string>
+    <string name="developer_mode">开发者模式</string>
+    <string name="developer_mode_on_hint">已进入开发者模式</string>
+    <string name="developer_mode_off_hint">输入密码后可进入开发者模式</string>
+    <string name="developer_dialog_title">进入开发者模式</string>
+    <string name="password">密码</string>
+    <string name="developer_entered">已进入开发者模式</string>
+    <string name="password_error">密码错误</string>
+    <!-- 其它 -->
+    <string name="unknown">未知</string>
+    <string name="unselected">未选择</string>
+    <string name="usb_serial">USB 串口</string>
+    <string name="bluetooth_device">蓝牙设备</string>
 </resources>

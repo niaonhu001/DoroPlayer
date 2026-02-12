@@ -1,6 +1,9 @@
 package com.example.funplayer
 
 import android.app.Activity
+import androidx.annotation.StringRes
+import android.content.Context
+import android.content.res.Configuration
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
@@ -8,6 +11,7 @@ import android.content.Intent
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import android.content.ContextWrapper
 import android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -82,6 +86,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -136,9 +141,27 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.example.funplayer.ui.theme.FunPlayerTheme
+import java.util.Locale
 import java.util.UUID
 
 class MainActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: Context) {
+        val prefs = newBase.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val lang = prefs.getString(KEY_APP_LANGUAGE, "system") ?: "system"
+        val locale = when (lang) {
+            "zh" -> Locale.SIMPLIFIED_CHINESE
+            "en" -> Locale.ENGLISH
+            else -> null
+        }
+        if (locale != null) {
+            val config = Configuration(newBase.resources.configuration)
+            config.setLocale(locale)
+            super.attachBaseContext(ContextWrapper(newBase.createConfigurationContext(config)))
+        } else {
+            super.attachBaseContext(newBase)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -313,6 +336,7 @@ private const val KEY_HANDY_KEY = "handy_connection_key"
 private const val KEY_HANDY_AXIS = "handy_axis"
 private const val KEY_HANDY_DEVICE_ADDRESS = "handy_device_address"
 private const val KEY_BT_SERIAL_DEVICE_ADDRESS = "bt_serial_device_address"
+private const val KEY_APP_LANGUAGE = "app_language"
 
 private val HANDY_SERVICE_UUID: UUID = UUID.fromString("4fafc201-1fb5-459e-8fcc-c5c9c331914b")
 private val HANDY_CHARACTERISTIC_UUID: UUID = UUID.fromString("beb5483e-36e1-4688-b7f5-ea07361b26a8")
@@ -325,6 +349,16 @@ private fun getIsDeveloperMode(context: android.content.Context): Boolean =
 private fun setDeveloperMode(context: android.content.Context, enabled: Boolean) {
     context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).edit()
         .putBoolean(KEY_DEVELOPER_MODE, enabled).apply()
+}
+
+/** 可选值：system / zh / en */
+private fun getAppLanguage(context: android.content.Context): String =
+    context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        .getString(KEY_APP_LANGUAGE, "system") ?: "system"
+
+private fun setAppLanguage(context: android.content.Context, value: String) {
+    context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).edit()
+        .putString(KEY_APP_LANGUAGE, value).apply()
 }
 
 private fun getConnectionEnabled(context: android.content.Context): Boolean =
@@ -776,7 +810,7 @@ private fun getAvailableSerialPorts(context: android.content.Context): List<Pair
         val vid = d.vendorId.toString(16).lowercase()
         val pid = d.productId.toString(16).lowercase()
         val id = "$vid:$pid"
-        val name = d.productName?.takeIf { it.isNotEmpty() } ?: d.deviceName ?: "USB 串口"
+        val name = d.productName?.takeIf { it.isNotEmpty() } ?: d.deviceName ?: context.getString(R.string.usb_serial)
         Pair("$name ($id)", id)
     }
 }
@@ -793,7 +827,7 @@ private fun saveVideoLibrary(context: android.content.Context, uri: android.net.
     context.contentResolver.takePersistableUriPermission(uri, FLAG_GRANT_READ_URI_PERMISSION)
     context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).edit()
         .putString(KEY_VIDEO_LIBRARY_URI, uri.toString())
-        .putString(KEY_VIDEO_LIBRARY_DISPLAY_NAME, displayName ?: uri.lastPathSegment ?: "未知")
+        .putString(KEY_VIDEO_LIBRARY_DISPLAY_NAME, displayName ?: uri.lastPathSegment ?: context.getString(R.string.unknown))
         .apply()
 }
 
@@ -938,7 +972,7 @@ fun VideoApp(
                     onSearchTextChange = { searchText = it },
                     selectedTags = selectedTags,
                     onTagToggled = { tag ->
-                        selectedTags = if (tag == "全部") emptySet()
+                        selectedTags = if (tag == TAG_KEY_ALL) emptySet()
                         else if (tag in selectedTags) selectedTags - tag
                         else selectedTags + tag
                     },
@@ -1025,20 +1059,20 @@ private fun BottomNavigationBar(
         NavigationBarItem(
             selected = currentTab == MainTab.Device,
             onClick = { onTabSelected(MainTab.Device) },
-            icon = { Icon(Icons.Filled.Devices, contentDescription = "设备") },
-            label = { Text("设备") }
+            icon = { Icon(Icons.Filled.Devices, contentDescription = stringResource(R.string.tab_device)) },
+            label = { Text(stringResource(R.string.tab_device)) }
         )
         NavigationBarItem(
             selected = currentTab == MainTab.Home,
             onClick = { onTabSelected(MainTab.Home) },
-            icon = { Icon(Icons.Filled.Home, contentDescription = "主页") },
-            label = { Text("主页") }
+            icon = { Icon(Icons.Filled.Home, contentDescription = stringResource(R.string.tab_home)) },
+            label = { Text(stringResource(R.string.tab_home)) }
         )
         NavigationBarItem(
             selected = currentTab == MainTab.Settings,
             onClick = { onTabSelected(MainTab.Settings) },
-            icon = { Icon(Icons.Filled.Settings, contentDescription = "设置") },
-            label = { Text("设置") }
+            icon = { Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.tab_settings)) },
+            label = { Text(stringResource(R.string.tab_settings)) }
         )
     }
 }
@@ -1047,6 +1081,8 @@ private fun BottomNavigationBar(
 
 /** 筛选栏单行最多显示的标签个数，超出后显示省略号并弹窗选择 */
 private const val MAX_VISIBLE_TAGS_IN_ROW = 6
+/** 标签“全部”的逻辑 key，与语言无关 */
+private const val TAG_KEY_ALL = "all"
 
 @Composable
 private fun HomeScreen(
@@ -1088,7 +1124,7 @@ private fun HomeScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp),
-            placeholder = { Text("搜索视频名称、标签…") },
+            placeholder = { Text(stringResource(R.string.search_placeholder)) },
             singleLine = true
         )
 
@@ -1099,9 +1135,9 @@ private fun HomeScreen(
                 .horizontalScroll(rememberScrollState())
         ) {
             FilterChipItem(
-                text = "全部",
+                text = stringResource(R.string.tag_all),
                 selected = selectedTags.isEmpty(),
-                onClick = { onTagToggled("全部") }
+                onClick = { onTagToggled(TAG_KEY_ALL) }
             )
             Spacer(modifier = Modifier.width(8.dp))
             visibleTags.forEach { tag ->
@@ -1124,7 +1160,7 @@ private fun HomeScreen(
         if (showAllTagsDialog) {
             AlertDialog(
                 onDismissRequest = { showAllTagsDialog = false },
-                title = { Text("选择标签") },
+                title = { Text(stringResource(R.string.tag_select_title)) },
                 text = {
                     Column(
                         modifier = Modifier
@@ -1137,9 +1173,9 @@ private fun HomeScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             FilterChipItem(
-                                text = "全部",
+                                text = stringResource(R.string.tag_all),
                                 selected = selectedTags.isEmpty(),
-                                onClick = { onTagToggled("全部") }
+                                onClick = { onTagToggled(TAG_KEY_ALL) }
                             )
                         }
                         Spacer(modifier = Modifier.height(12.dp))
@@ -1160,7 +1196,7 @@ private fun HomeScreen(
                 },
                 confirmButton = {
                     TextButton(onClick = { showAllTagsDialog = false }) {
-                        Text("完成")
+                        Text(stringResource(R.string.done))
                     }
                 }
             )
@@ -1176,7 +1212,7 @@ private fun HomeScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "暂无视频\n请到「设置」中选择视频文件夹并重新扫描",
+                    text = stringResource(R.string.video_empty_hint),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 15.sp,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -1257,7 +1293,7 @@ private fun VideoCard(
                     contentScale = ContentScale.Crop
                 )
             } else {
-                Text("封面", color = Color.White.copy(alpha = 0.7f))
+                Text(stringResource(R.string.cover), color = Color.White.copy(alpha = 0.7f))
             }
         }
 
@@ -1274,7 +1310,7 @@ private fun VideoCard(
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = "时长 ${video.duration}",
+            text = stringResource(R.string.duration_format, video.duration),
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1323,7 +1359,7 @@ private fun VideoPlayerEmbed(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "无播放地址（请从设置中选择视频文件夹并重新扫描）",
+                text = stringResource(R.string.no_play_uri),
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 14.sp
             )
@@ -1511,10 +1547,10 @@ private fun VideoDetailScreen(
         topBar = {
             if (!isFullscreen) {
                 TopAppBar(
-                    title = { Text("视频详情") },
+                    title = { Text(stringResource(R.string.video_detail_title)) },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
+                            Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                         }
                     }
                 )
@@ -1549,7 +1585,7 @@ private fun VideoDetailScreen(
                     ) {
                         Icon(
                             Icons.Filled.ArrowBack,
-                            contentDescription = "退出全屏",
+                            contentDescription = stringResource(R.string.exit_fullscreen),
                             tint = Color.White
                         )
                     }
@@ -1565,14 +1601,14 @@ private fun VideoDetailScreen(
                         ) {
                             Icon(
                                 Icons.Filled.ScreenRotation,
-                                contentDescription = "旋转全屏方向",
+                                contentDescription = stringResource(R.string.rotate_fullscreen),
                                 tint = Color.White
                             )
                         }
                         IconButton(onClick = { isFullscreen = false }) {
                             Icon(
                                 Icons.Filled.FullscreenExit,
-                                contentDescription = "退出全屏",
+                                contentDescription = stringResource(R.string.exit_fullscreen),
                                 tint = Color.White
                             )
                         }
@@ -1586,7 +1622,7 @@ private fun VideoDetailScreen(
                     ) {
                         Icon(
                             Icons.Filled.Fullscreen,
-                            contentDescription = "全屏播放",
+                            contentDescription = stringResource(R.string.fullscreen_play),
                             tint = Color.White
                         )
                     }
@@ -1605,7 +1641,7 @@ private fun VideoDetailScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "片长 ${video.duration}",
+                text = stringResource(R.string.video_duration_format, video.duration),
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1613,7 +1649,7 @@ private fun VideoDetailScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "标签",
+                text = stringResource(R.string.label_tags),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -1653,21 +1689,21 @@ private fun VideoDetailScreen(
 
                 AssistChip(
                     onClick = { showAddDialog = true },
-                    label = { Text("+") }
+                    label = { Text(stringResource(R.string.add_tag_btn)) }
                 )
 
                 Spacer(modifier = Modifier.width(8.dp))
 
                 AssistChip(
                     onClick = { showDeleteMode = !showDeleteMode },
-                    label = { Text(if (showDeleteMode) "完成" else "−") }
+                    label = { Text(if (showDeleteMode) stringResource(R.string.done) else stringResource(R.string.add_tag_done_btn)) }
                 )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "脚本热力图",
+                text = stringResource(R.string.script_heatmap),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -1728,7 +1764,7 @@ private fun VideoDetailScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (video.funscriptUri == null) "无配套脚本" else "脚本加载中或格式不支持",
+                        text = stringResource(if (video.funscriptUri == null) R.string.no_script else R.string.script_loading),
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1737,7 +1773,7 @@ private fun VideoDetailScreen(
             if (getIsDeveloperMode(context) && axisCommandForSend.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "轴控制指令",
+                    text = stringResource(R.string.axis_command),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -1762,12 +1798,12 @@ private fun VideoDetailScreen(
         if (showAddDialog) {
             AlertDialog(
                 onDismissRequest = { showAddDialog = false },
-                title = { Text("添加标签") },
+                title = { Text(stringResource(R.string.add_tag_dialog_title)) },
                 text = {
                     OutlinedTextField(
                         value = newTagText,
                         onValueChange = { newTagText = it },
-                        label = { Text("标签名称") }
+                        label = { Text(stringResource(R.string.tag_name_label)) }
                     )
                 },
                 confirmButton = {
@@ -1781,12 +1817,12 @@ private fun VideoDetailScreen(
                             showAddDialog = false
                         }
                     ) {
-                        Text("确定")
+                        Text(stringResource(R.string.ok))
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showAddDialog = false }) {
-                        Text("取消")
+                        Text(stringResource(R.string.cancel))
                     }
                 }
             )
@@ -1797,12 +1833,12 @@ private fun VideoDetailScreen(
 
 // ================== 设备设置页和软件设置页 ==================
 
-private enum class ConnectionType(val displayName: String) {
-    Serial("串口连接"),
-    BluetoothSerial("蓝牙串口"),
-    TCP("TCP"),
-    UDP("UDP"),
-    TheHandy("The Handy")
+private enum class ConnectionType(@StringRes val nameResId: Int) {
+    Serial(R.string.serial_connection),
+    BluetoothSerial(R.string.bt_serial_connection),
+    TCP(R.string.tcp_connection),
+    UDP(R.string.udp_connection),
+    TheHandy(R.string.handy_connection)
 }
 
 private val AXIS_NAMES = listOf("L0", "L1", "L2", "R0", "R1", "R2")
@@ -1828,7 +1864,7 @@ private fun DeviceSettingsScreen() {
         if (granted) {
             handyScanTick++
         } else {
-            Toast.makeText(context, "缺少蓝牙权限，无法扫描设备", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.bt_scan_permission_denied), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1955,11 +1991,11 @@ private fun DeviceSettingsScreen() {
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        Text("设备设置", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.device_settings_title), fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
 
         // ---------- 连接设置 ----------
-        SettingsCard(title = "连接设置") {
+        SettingsCard(title = stringResource(R.string.connection_settings)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1969,7 +2005,7 @@ private fun DeviceSettingsScreen() {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("连接开关", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text(stringResource(R.string.connection_switch), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     Switch(
                         checked = connectionEnabled,
                         onCheckedChange = { connectionEnabled = it }
@@ -1982,20 +2018,20 @@ private fun DeviceSettingsScreen() {
                         scope.launch {
                             val ok = withContext(Dispatchers.IO) { sendConnectionTest(context) }
                             connectionTestInProgress = false
-                            Toast.makeText(
-                                context,
-                                if (ok) "连接测试已发送" else "连接测试发送失败",
-                                Toast.LENGTH_SHORT
-                            ).show()
+Toast.makeText(
+                            context,
+                            if (ok) context.getString(R.string.connection_test_sent) else context.getString(R.string.connection_test_failed),
+                            Toast.LENGTH_SHORT
+                        ).show()
                         }
                     },
                     enabled = !connectionTestInProgress
                 ) {
-                    Text(if (connectionTestInProgress) "发送中…" else "连接测试")
+                    Text(if (connectionTestInProgress) stringResource(R.string.connection_test_sending) else stringResource(R.string.connection_test))
                 }
             }
             Spacer(Modifier.height(12.dp))
-            Text("连接方式", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Text(stringResource(R.string.connection_type_label), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
             Spacer(Modifier.height(8.dp))
             ExposedDropdownMenuBox(
                 expanded = connectionExpanded,
@@ -2003,12 +2039,12 @@ private fun DeviceSettingsScreen() {
             ) {
                 OutlinedTextField(
                     readOnly = true,
-                    value = connectionType.displayName,
+                    value = stringResource(connectionType.nameResId),
                     onValueChange = {},
                     modifier = Modifier
                         .fillMaxWidth()
                         .menuAnchor(),
-                    label = { Text("连接方式") },
+                    label = { Text(stringResource(R.string.connection_type_label)) },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = connectionExpanded) },
                     colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
                 )
@@ -2018,7 +2054,7 @@ private fun DeviceSettingsScreen() {
                 ) {
                     ConnectionType.entries.forEach { type ->
                         DropdownMenuItem(
-                            text = { Text(type.displayName) },
+                            text = { Text(stringResource(type.nameResId)) },
                             onClick = {
                                 connectionType = type
                                 connectionExpanded = false
@@ -2042,15 +2078,15 @@ private fun DeviceSettingsScreen() {
                         onExpandedChange = { serialPortExpanded = it }
                     ) {
                         val selectedDisplay = serialPortOptions.find { it.second == serialDeviceId }?.first
-                            ?: if (serialDeviceId.isNotEmpty()) serialDeviceId else "选择串口设备"
+                            ?: if (serialDeviceId.isNotEmpty()) serialDeviceId else stringResource(R.string.select_serial_device)
                         OutlinedTextField(
                             readOnly = true,
-                            value = if (serialPortOptions.isEmpty() && serialDeviceId.isEmpty()) "未检测到串口设备" else selectedDisplay,
+                            value = if (serialPortOptions.isEmpty() && serialDeviceId.isEmpty()) stringResource(R.string.serial_no_device) else selectedDisplay,
                             onValueChange = {},
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .menuAnchor(),
-                            label = { Text("串口设备") },
+                            label = { Text(stringResource(R.string.serial_device)) },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = serialPortExpanded) },
                             colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
                         )
@@ -2060,7 +2096,7 @@ private fun DeviceSettingsScreen() {
                         ) {
                             if (serialPortOptions.isEmpty()) {
                                 DropdownMenuItem(
-                                    text = { Text("未检测到串口设备") },
+                                    text = { Text(stringResource(R.string.serial_no_device)) },
                                     onClick = { serialPortExpanded = false }
                                 )
                             } else {
@@ -2081,7 +2117,7 @@ private fun DeviceSettingsScreen() {
                         OutlinedTextField(
                             value = baudRate,
                             onValueChange = { baudRate = it },
-                            label = { Text("波特率") },
+                            label = { Text(stringResource(R.string.baud_rate)) },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -2100,7 +2136,7 @@ private fun DeviceSettingsScreen() {
                         btSerialDeviceOptions = bonded
                             .mapNotNull { dev ->
                                 val addr = dev.address ?: return@mapNotNull null
-                                val name = dev.name ?: "蓝牙设备"
+                                val name = dev.name ?: context.getString(R.string.bluetooth_device)
                                 "$name ($addr)" to addr
                             }
                             .distinctBy { it.second }
@@ -2111,15 +2147,15 @@ private fun DeviceSettingsScreen() {
                         onExpandedChange = { btSerialDeviceExpanded = it }
                     ) {
                         val selectedDisplay = btSerialDeviceOptions.find { it.second == btSerialDeviceAddress }?.first
-                            ?: if (btSerialDeviceAddress.isNotEmpty()) btSerialDeviceAddress else "选择已配对设备"
+                            ?: if (btSerialDeviceAddress.isNotEmpty()) btSerialDeviceAddress else stringResource(R.string.select_bt_device)
                         OutlinedTextField(
                             readOnly = true,
-                            value = if (btSerialDeviceOptions.isEmpty() && btSerialDeviceAddress.isEmpty()) "未发现已配对设备" else selectedDisplay,
+                            value = if (btSerialDeviceOptions.isEmpty() && btSerialDeviceAddress.isEmpty()) stringResource(R.string.bt_serial_no_device) else selectedDisplay,
                             onValueChange = {},
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .menuAnchor(),
-                            label = { Text("蓝牙串口设备") },
+                            label = { Text(stringResource(R.string.bt_serial_device)) },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = btSerialDeviceExpanded) },
                             colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
                         )
@@ -2129,7 +2165,7 @@ private fun DeviceSettingsScreen() {
                         ) {
                             if (btSerialDeviceOptions.isEmpty()) {
                                 DropdownMenuItem(
-                                    text = { Text("未发现已配对设备") },
+                                    text = { Text(stringResource(R.string.bt_serial_no_device)) },
                                     onClick = { btSerialDeviceExpanded = false }
                                 )
                             } else {
@@ -2149,16 +2185,16 @@ private fun DeviceSettingsScreen() {
                     OutlinedTextField(
                         value = btSerialDeviceAddress,
                         onValueChange = { btSerialDeviceAddress = it },
-                        label = { Text("设备地址 (MAC)") },
+                        label = { Text(stringResource(R.string.device_address_mac)) },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("AA:BB:CC:DD:EE:FF") }
+                        placeholder = { Text(stringResource(R.string.mac_placeholder)) }
                     )
                     if (isDeveloperMode) {
                         Spacer(Modifier.height(8.dp))
                         OutlinedTextField(
                             value = baudRate,
                             onValueChange = { baudRate = it },
-                            label = { Text("波特率（蓝牙串口一般无需设置）") },
+                            label = { Text(stringResource(R.string.baud_rate_bt_hint)) },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -2167,37 +2203,37 @@ private fun DeviceSettingsScreen() {
                     OutlinedTextField(
                         value = ipAddress,
                         onValueChange = { ipAddress = it },
-                        label = { Text("IP 地址") },
+                        label = { Text(stringResource(R.string.ip_address)) },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = port,
                         onValueChange = { port = it },
-                        label = { Text("端口号") },
+                        label = { Text(stringResource(R.string.port_number)) },
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (isDeveloperMode) {
                         Spacer(Modifier.height(12.dp))
-                        Text("发送信息文本格式", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Text(stringResource(R.string.send_format_title), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                         Spacer(Modifier.height(8.dp))
                         OutlinedTextField(
                             value = sendFormatPrefix,
                             onValueChange = { sendFormatPrefix = it },
-                            label = { Text("前缀") },
+                            label = { Text(stringResource(R.string.prefix)) },
                             modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(Modifier.height(8.dp))
                         OutlinedTextField(
                             value = sendFormatSuffix,
                             onValueChange = { sendFormatSuffix = it },
-                            label = { Text("尾缀") },
+                            label = { Text(stringResource(R.string.suffix)) },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
                 }
                 ConnectionType.TheHandy -> {
-                    Text("蓝牙设备", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text(stringResource(R.string.handy_bluetooth_device), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -2208,10 +2244,10 @@ private fun DeviceSettingsScreen() {
                             onClick = { handyStartScan() },
                             enabled = !handyScanning
                         ) {
-                            Text(if (handyScanning) "扫描中…" else "扫描")
+                            Text(if (handyScanning) stringResource(R.string.scanning) else stringResource(R.string.scan))
                         }
                         Text(
-                            text = if (handyScanning) "正在扫描可用设备…" else "",
+                            text = if (handyScanning) stringResource(R.string.scanning_devices) else "",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -2222,15 +2258,15 @@ private fun DeviceSettingsScreen() {
                         onExpandedChange = { handyDeviceExpanded = it }
                     ) {
                         val selectedDisplay = handyDeviceOptions.find { it.second == handyDeviceAddress }?.first
-                            ?: if (handyDeviceAddress.isNotEmpty()) handyDeviceAddress else "选择蓝牙设备"
+                            ?: if (handyDeviceAddress.isNotEmpty()) handyDeviceAddress else stringResource(R.string.select_handy_device)
                         OutlinedTextField(
                             readOnly = true,
-                            value = if (handyDeviceOptions.isEmpty() && handyDeviceAddress.isEmpty()) "未扫描到设备" else selectedDisplay,
+                            value = if (handyDeviceOptions.isEmpty() && handyDeviceAddress.isEmpty()) stringResource(R.string.handy_no_device) else selectedDisplay,
                             onValueChange = {},
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .menuAnchor(),
-                            label = { Text("设备") },
+                            label = { Text(stringResource(R.string.serial_device)) },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = handyDeviceExpanded) },
                             colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
                         )
@@ -2240,7 +2276,7 @@ private fun DeviceSettingsScreen() {
                         ) {
                             if (handyDeviceOptions.isEmpty()) {
                                 DropdownMenuItem(
-                                    text = { Text("未扫描到设备") },
+                                    text = { Text(stringResource(R.string.handy_no_device)) },
                                     onClick = { handyDeviceExpanded = false }
                                 )
                             } else {
@@ -2260,9 +2296,9 @@ private fun DeviceSettingsScreen() {
                     OutlinedTextField(
                         value = handyDeviceAddress,
                         onValueChange = { handyDeviceAddress = it },
-                        label = { Text("设备地址 (MAC)") },
+                        label = { Text(stringResource(R.string.device_address_mac)) },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("AA:BB:CC:DD:EE:FF") }
+                        placeholder = { Text(stringResource(R.string.mac_placeholder)) }
                     )
                     Spacer(Modifier.height(12.dp))
                     ExposedDropdownMenuBox(
@@ -2276,7 +2312,7 @@ private fun DeviceSettingsScreen() {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .menuAnchor(),
-                            label = { Text("轴") },
+                            label = { Text(stringResource(R.string.axis)) },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = handyAxisExpanded) },
                             colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
                         )
@@ -2299,7 +2335,7 @@ private fun DeviceSettingsScreen() {
                     OutlinedTextField(
                         value = handyKey,
                         onValueChange = { handyKey = it },
-                        label = { Text("密钥") },
+                        label = { Text(stringResource(R.string.handy_key)) },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -2307,8 +2343,8 @@ private fun DeviceSettingsScreen() {
         }
 
         // ---------- 输出范围设置 ----------
-        SettingsCard(title = "输出范围设置") {
-            Text("各轴输出范围 0%–100%", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        SettingsCard(title = stringResource(R.string.output_range_settings)) {
+            Text(stringResource(R.string.output_range_title), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
             Spacer(Modifier.height(8.dp))
             AXIS_NAMES.forEach { axisName ->
                 val range = axisRanges[axisName] ?: (0f to 100f)
@@ -2343,6 +2379,7 @@ private fun DeviceSettingsScreen() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppSettingsScreen(
     isDarkTheme: Boolean,
@@ -2352,7 +2389,7 @@ private fun AppSettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var displayPath by remember {
-        mutableStateOf(getStoredVideoLibraryDisplayName(context) ?: getStoredVideoLibraryUri(context) ?: "未选择")
+        mutableStateOf(getStoredVideoLibraryDisplayName(context) ?: getStoredVideoLibraryUri(context) ?: context.getString(R.string.unselected))
     }
     var isScanning by remember { mutableStateOf(false) }
 
@@ -2366,7 +2403,7 @@ private fun AppSettingsScreen(
     ) { uri ->
         if (uri != null) {
             val doc = DocumentFile.fromTreeUri(context, uri)
-            val name = doc?.name ?: uri.lastPathSegment?.substringAfterLast('/') ?: "未知"
+            val name = doc?.name ?: uri.lastPathSegment?.substringAfterLast('/') ?: context.getString(R.string.unknown)
             saveVideoLibrary(context, uri, name)
             displayPath = name
             // 设置路径后自动扫描一次
@@ -2387,12 +2424,12 @@ private fun AppSettingsScreen(
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        Text("软件设置", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.app_settings_title), fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
 
-        SettingsCard(title = "视频库路径") {
+        SettingsCard(title = stringResource(R.string.video_library_path)) {
             Text(
-                text = "当前路径：$displayPath",
+                text = stringResource(R.string.current_path_format, displayPath),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
@@ -2401,7 +2438,7 @@ private fun AppSettingsScreen(
                 OutlinedButton(
                     onClick = { folderPickerLauncher.launch(null) }
                 ) {
-                    Text("选择文件夹…")
+                    Text(stringResource(R.string.select_folder))
                 }
                 OutlinedButton(
                     onClick = {
@@ -2418,34 +2455,80 @@ private fun AppSettingsScreen(
                     },
                     enabled = !isScanning && getStoredVideoLibraryUri(context) != null
                 ) {
-                    Text(if (isScanning) "扫描中…" else "重新扫描")
+                    Text(if (isScanning) stringResource(R.string.scanning) else stringResource(R.string.rescan))
                 }
             }
         }
 
-        SettingsCard(title = "播放器设置") {
-            Text("默认播放行为", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        SettingsCard(title = stringResource(R.string.player_settings)) {
+            Text(stringResource(R.string.default_play_behavior), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
             Spacer(Modifier.height(4.dp))
-            Text("播放完停止（示例）", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.play_stop_example), color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             Spacer(Modifier.height(12.dp))
 
-            Text("字幕设置", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Text(stringResource(R.string.subtitle_settings), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("默认启用字幕")
+                Text(stringResource(R.string.subtitle_default_on))
                 Spacer(Modifier.width(8.dp))
                 Switch(checked = true, onCheckedChange = { /* TODO */ })
             }
         }
 
-        SettingsCard(title = "主题与外观") {
+        SettingsCard(title = stringResource(R.string.language_settings)) {
+            val languageOptions = listOf(
+                "system" to stringResource(R.string.follow_system),
+                "zh" to stringResource(R.string.simplified_chinese),
+                "en" to stringResource(R.string.english)
+            )
+            var appLanguage by remember { mutableStateOf(getAppLanguage(context)) }
+            var languageExpanded by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(
+                expanded = languageExpanded,
+                onExpandedChange = { languageExpanded = it }
+            ) {
+                OutlinedTextField(
+                    readOnly = true,
+                    value = languageOptions.find { it.first == appLanguage }?.second ?: appLanguage,
+                    onValueChange = {},
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(),
+                    label = { Text(stringResource(R.string.interface_language)) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageExpanded) },
+                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                )
+                ExposedDropdownMenu(
+                    expanded = languageExpanded,
+                    onDismissRequest = { languageExpanded = false }
+                ) {
+                    languageOptions.forEach { (value, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = {
+                                if (value != appLanguage) {
+                                    appLanguage = value
+                                    setAppLanguage(context, value)
+                                    languageExpanded = false
+                                    (context as? Activity)?.recreate()
+                                } else {
+                                    languageExpanded = false
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        SettingsCard(title = stringResource(R.string.theme_appearance)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("深色模式")
+                Text(stringResource(R.string.dark_mode))
                 Switch(
                     checked = isDarkTheme,
                     onCheckedChange = onThemeChange
@@ -2453,14 +2536,14 @@ private fun AppSettingsScreen(
             }
         }
 
-        SettingsCard(title = "开发者模式") {
+        SettingsCard(title = stringResource(R.string.developer_mode)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (isDeveloperMode) "已进入开发者模式" else "输入密码后可进入开发者模式",
+                    text = if (isDeveloperMode) stringResource(R.string.developer_mode_on_hint) else stringResource(R.string.developer_mode_off_hint),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 14.sp
                 )
@@ -2486,7 +2569,7 @@ private fun AppSettingsScreen(
                 developerPasswordInput = ""
                 developerPasswordError = null
             },
-            title = { Text("进入开发者模式") },
+            title = { Text(stringResource(R.string.developer_dialog_title)) },
             text = {
                 Column {
                     OutlinedTextField(
@@ -2495,7 +2578,7 @@ private fun AppSettingsScreen(
                             developerPasswordInput = it
                             developerPasswordError = null
                         },
-                        label = { Text("密码") },
+                        label = { Text(stringResource(R.string.password)) },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth()
@@ -2515,13 +2598,13 @@ private fun AppSettingsScreen(
                             showDeveloperPasswordDialog = false
                             developerPasswordInput = ""
                             developerPasswordError = null
-                            Toast.makeText(context, "已进入开发者模式", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.developer_entered), Toast.LENGTH_SHORT).show()
                         } else {
-                            developerPasswordError = "密码错误"
+                            developerPasswordError = context.getString(R.string.password_error)
                         }
                     }
                 ) {
-                    Text("确定")
+                    Text(stringResource(R.string.ok))
                 }
             },
             dismissButton = {
@@ -2532,7 +2615,7 @@ private fun AppSettingsScreen(
                         developerPasswordError = null
                     }
                 ) {
-                    Text("取消")
+                    Text(stringResource(R.string.cancel))
                 }
             }
         )
