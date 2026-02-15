@@ -30,6 +30,7 @@
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
     <string name="bt_scan_permission_denied">Bluetooth permission required to scan</string>
+    <string name="ble_need_location_hint">Please enable Location (GPS or network) in system settings, or BLE scan may find no devices</string>
     <string name="device_settings_title">Device settings</string>
     <string name="connection_settings">Connection</string>
     <string name="connection_switch">Connection</string>
@@ -43,6 +44,7 @@
     <string name="tcp_connection">TCP</string>
     <string name="udp_connection">UDP</string>
     <string name="handy_connection">The Handy</string>
+    <string name="joyplay_connection">JoyPlay</string>
     <string name="serial_device">Serial device</string>
     <string name="serial_no_device">No serial device found</string>
     <string name="select_serial_device">Select serial device</string>
@@ -59,6 +61,7 @@
     <string name="prefix">Prefix</string>
     <string name="suffix">Suffix</string>
     <string name="handy_bluetooth_device">Bluetooth device</string>
+    <string name="ble_disconnect_after_write">Disconnect BLE after send (may reduce “remote disconnected” prompts)</string>
     <string name="scan">Scan</string>
     <string name="scanning">Scanning…</string>
     <string name="scanning_devices">Scanning for devices…</string>
@@ -68,9 +71,43 @@
     <string name="handy_key">Key</string>
     <string name="output_range_title">Axis output range 0%–100%</string>
     <string name="output_range_settings">Output range</string>
+    <string name="device_control_title">Device control</string>
+    <string name="device_control_axis_sliders">Axis positions (sliders)</string>
+    <string name="device_control_send_positions">Send current positions</string>
+    <string name="device_control_script_section">Run script only</string>
+    <string name="device_control_select_script">Select script file</string>
+    <string name="device_control_play_script">Play script</string>
+    <string name="device_control_stop_script">Stop</string>
+    <string name="device_control_no_script">No script selected</string>
+    <string name="device_control_multi_script_format">Multi-axis (%d files)</string>
+    <string name="device_control_script_sent">Command sent</string>
+    <string name="device_control_script_failed">Send failed</string>
     <string name="app_settings_title">App settings</string>
     <string name="video_library_path">Video library</string>
+    <string name="video_library_source_label">Video library source</string>
     <string name="current_path_format">Path: %s</string>
+    <string name="video_library_source_local">Local folder</string>
+    <string name="video_library_source_nas">NAS (SMB)</string>
+    <string name="nas_server_hint">Server (IP or hostname)</string>
+    <string name="nas_share_hint">Share name</string>
+    <string name="nas_username_hint">Username</string>
+    <string name="nas_password_hint">Password</string>
+    <string name="nas_port_hint">Port (default 445)</string>
+    <string name="nas_subpath_hint">Folder path on share (optional, e.g. /Videos, empty = root)</string>
+    <string name="nas_save">Save NAS settings</string>
+    <string name="nas_saved">NAS settings saved</string>
+    <string name="nas_browse_folder">Browse folder</string>
+    <string name="nas_folder_browser_title">Select NAS folder</string>
+    <string name="nas_parent_folder">Parent</string>
+    <string name="nas_select_current_folder">Select this folder</string>
+    <string name="nas_loading">Loading…</string>
+    <string name="nas_error_connect">Cannot connect, check address and credentials</string>
+    <string name="nas_connection_settings">NAS connection settings</string>
+    <string name="nas_connection_test">Test connection</string>
+    <string name="nas_test_success">NAS connection successful</string>
+    <string name="nas_test_failed">NAS connection failed</string>
+    <string name="nas_scan_folder">Scan folder</string>
+    <string name="nas_scan_done_format">Scan complete, %d video(s)</string>
     <string name="select_folder">Select folder…</string>
     <string name="rescan">Rescan</string>
     <string name="player_settings">Player</string>
@@ -96,4 +133,8 @@
     <string name="unselected">Not selected</string>
     <string name="usb_serial">USB serial</string>
     <string name="bluetooth_device">Bluetooth device</string>
+    <string name="dev_log_title">Log</string>
+    <string name="dev_log_clear">Clear</string>
+    <string name="dev_log_close">Close</string>
+    <string name="dev_log_fab">Log</string>
 </resources>

@@ -8,8 +8,8 @@
     <!-- BLE (The Handy) -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <!-- Android 6-11 扫描 BLE 需要定位权限 -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <!-- Android 6+ 扫描 BLE 需要定位权限；部分 Android 12+ 机型也需授予定位才有扫描结果 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- Android 12+ -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" tools:targetApi="s" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" tools:targetApi="s" />

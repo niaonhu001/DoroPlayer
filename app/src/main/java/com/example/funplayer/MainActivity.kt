@@ -1,5 +1,7 @@
+@file:Suppress("DEPRECATION")
 package com.example.funplayer
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import androidx.annotation.StringRes
 import android.content.Context
@@ -7,13 +9,16 @@ import android.content.res.Configuration
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.content.BroadcastReceiver
 import android.content.Intent
+import android.content.IntentFilter
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import android.content.ContextWrapper
 import android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
 import android.os.Bundle
+import android.util.LruCache
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,12 +44,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Devices
@@ -52,14 +65,18 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.ScreenRotation
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -80,6 +97,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -92,10 +110,12 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
 import androidx.documentfile.provider.DocumentFile
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothAdapter.LeScanCallback
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
@@ -109,6 +129,7 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.location.LocationManager
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.ParcelUuid
@@ -118,13 +139,19 @@ import com.example.funplayer.handyplug.Handyplug
 import com.hoho.android.usbserial.driver.UsbSerialPort
 import com.hoho.android.usbserial.driver.UsbSerialProber
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 import org.json.JSONArray
 import org.json.JSONObject
+import jcifs.smb.SmbFile
+import java.io.File
+import java.io.FileOutputStream
+import java.util.LinkedHashMap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -179,6 +206,39 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@Composable
+private fun SettingsCard(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(16.dp)
+    ) {
+        Text(title, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.height(8.dp))
+        content()
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppSettingsScreen(
+    isDarkTheme: Boolean,
+    onThemeChange: (Boolean) -> Unit,
+    onVideosScanned: (List<VideoItem>) -> Unit,
+    onDeveloperModeChange: (Boolean) -> Unit
+) = AppSettingsScreenImpl(
+    isDarkTheme = isDarkTheme,
+    onThemeChange = onThemeChange,
+    onVideosScanned = onVideosScanned,
+    onDeveloperModeChange = onDeveloperModeChange
+)
+
 // ================== 数据模型与导航状态 ==================
 
 data class VideoItem(
@@ -187,7 +247,23 @@ data class VideoItem(
     val duration: String,
     val tags: List<String>,
     val uri: String? = null,  // 内容 URI，用于播放与扫描来源
-    val funscriptUri: String? = null  // 同名 .funscript 脚本 URI，无则 null
+    val funscriptUri: String? = null,  // 单文件脚本 URI（视频名.funscript），无则 null
+    /** 多文件脚本：轴 id -> 脚本 URI。格式为 视频名.轴名.funscript，L0 缺省轴名为 视频名.funscript */
+    val funscriptUrisByAxis: Map<String, String>? = null,
+    /** 同目录下的 视频名.tag 文件 URI，用于读写标签；无则 null */
+    val tagFileUri: String? = null,
+    /** 视频所在目录的 Document tree URI，用于在无 .tag 时创建新文件 */
+    val parentFolderUri: String? = null
+)
+
+/** 多文件 funscript 命名：轴 id -> 文件名后缀（null 表示 视频名.funscript 即 L0） */
+private val MULTI_FUNSCRIPT_AXIS_SUFFIXES = listOf(
+    "L0" to null,
+    "L1" to "surge",
+    "L2" to "sway",
+    "R0" to "twist",
+    "R1" to "roll",
+    "R2" to "pitch"
 )
 
 enum class MainTab(val label: String) {
@@ -207,13 +283,27 @@ private data class FunscriptAction(val at: Long, val pos: Int)
 private data class FunscriptAxis(val id: String, val actions: List<FunscriptAction>)
 private data class FunscriptData(val durationSec: Float, val axes: List<FunscriptAxis>)
 
-/** 从 content URI 加载并解析 .funscript，支持多轴 (axes) 或单轴 (根 actions)。
- * 根节点的 "actions" 无 id，解析为 L0；"axes" 数组中每项带 id（如 L1、L2），一并加入。 */
+/** 从 URI 字符串（content 或 smb://）读取 JSON 文本；失败返回 null */
+private fun readJsonFromUriString(context: android.content.Context, uriString: String): String? {
+    return when {
+        uriString.startsWith("smb:", ignoreCase = true) -> try {
+            SmbFile(uriString).inputStream.use { it.reader(Charsets.UTF_8).readText() }
+        } catch (_: Exception) { null }
+        else -> try {
+            context.contentResolver.openInputStream(android.net.Uri.parse(uriString))?.reader(Charsets.UTF_8)?.use { it.readText() }
+        } catch (_: Exception) { null }
+    }
+}
+
+/** 从 content 或 smb URI 加载并解析 .funscript，支持多轴 (axes) 或单轴 (根 actions)。
+ * 根节点的 "actions" 无 id，解析为 L0；"axes" 数组中每项带 id（如 L1、L2），一并加入。结果会写入内存缓存。 */
 private fun loadFunscriptFromUri(context: android.content.Context, uriString: String?): FunscriptData? {
     if (uriString == null) return null
+    if (uriString.startsWith("smb:", ignoreCase = true)) {
+        NasDataCache.getFunscript(uriString)?.let { return it }
+    }
     return try {
-        val uri = android.net.Uri.parse(uriString)
-        val json = context.contentResolver.openInputStream(uri)?.reader(Charsets.UTF_8)?.use { it.readText() } ?: return null
+        val json = readJsonFromUriString(context, uriString) ?: return null
         val root = JSONObject(json)
         val durationSec = root.optJSONObject("metadata")?.optDouble("duration", 0.0)?.toFloat() ?: 0f
         val axesList = mutableListOf<FunscriptAxis>()
@@ -242,7 +332,42 @@ private fun loadFunscriptFromUri(context: android.content.Context, uriString: St
         }
         if (axesList.isEmpty()) return null
         val totalMs = if (durationSec > 0) (durationSec * 1000).toLong() else axesList.flatMap { it.actions }.maxOfOrNull { it.at } ?: 1L
-        FunscriptData(durationSec, axesList)
+        val data = FunscriptData(durationSec, axesList)
+        if (uriString.startsWith("smb:", ignoreCase = true)) NasDataCache.putFunscript(uriString, data)
+        data
+    } catch (_: Exception) {
+        null
+    }
+}
+
+/** 多文件 funscript：按轴 id -> URI 分别读取，每文件仅解析根 "actions" 与 metadata.duration，合并为一份多轴 FunscriptData。支持 content 与 smb；结果写入内存缓存。 */
+private fun loadFunscriptMultiFromUris(context: android.content.Context, urisByAxis: Map<String, String>): FunscriptData? {
+    if (urisByAxis.isEmpty()) return null
+    val cacheKey = urisByAxis.toSortedMap().entries.joinToString(",") { "${it.key}=${it.value}" }
+    val allSmb = urisByAxis.values.all { it.startsWith("smb:", ignoreCase = true) }
+    if (allSmb) {
+        NasDataCache.getFunscript(cacheKey)?.let { return it }
+    }
+    return try {
+        val axesList = mutableListOf<FunscriptAxis>()
+        var maxDurationSec = 0f
+        for ((axisId, uriString) in urisByAxis) {
+            val json = readJsonFromUriString(context, uriString) ?: continue
+            val root = JSONObject(json)
+            val durationSec = root.optJSONObject("metadata")?.optDouble("duration", 0.0)?.toFloat() ?: 0f
+            if (durationSec > maxDurationSec) maxDurationSec = durationSec
+            if (!root.has("actions")) continue
+            val actionsArr = root.getJSONArray("actions")
+            val actions = (0 until actionsArr.length()).map { j ->
+                val o = actionsArr.getJSONObject(j)
+                FunscriptAction(o.optLong("at", 0L), o.optInt("pos", 0))
+            }.sortedBy { it.at }
+            if (actions.isNotEmpty()) axesList.add(FunscriptAxis(axisId, actions))
+        }
+        if (axesList.isEmpty()) return null
+        val data = FunscriptData(maxDurationSec, axesList)
+        if (allSmb) NasDataCache.putFunscript(cacheKey, data)
+        data
     } catch (_: Exception) {
         null
     }
@@ -296,6 +421,117 @@ private fun getAxisPositionAndDurationForHandy(
     return position to durationMs
 }
 
+/**
+ * 根据各轴目标位置（0–100）生成轴控制指令字符串。
+ * 会按设备设置中的输出范围映射到 [min%, max%]，durationMs 为运动时长。
+ */
+private fun buildAxisCommandFromPositions(
+    context: android.content.Context,
+    positions: Map<String, Int>,
+    durationMs: Long
+): String {
+    if (positions.isEmpty()) return ""
+    val ranges = getAxisRanges(context)
+    val sb = StringBuilder()
+    val dur = durationMs.coerceIn(1L, 60_000L)
+    for (axisId in AXIS_NAMES) {
+        val posRaw = positions[axisId] ?: continue
+        val (minR, maxR) = ranges[axisId] ?: (0f to 100f)
+        val t = (posRaw.coerceIn(0, 100) / 100f)
+        val mapped = kotlin.math.round(minR + t * (maxR - minR)).toInt().coerceIn(0, 100)
+        sb.append(axisId).append(mapped).append('I').append(dur)
+    }
+    return sb.toString()
+}
+
+/** 解析轴指令字符串为 (轴id, 位置, 时长ms) 列表，供 The Handy 等单轴发送使用 */
+private fun parseAxisCommandSegments(command: String): List<Triple<String, Int, Long>> {
+    if (command.isEmpty()) return emptyList()
+    val regex = Regex("(L0|L1|L2|R0|R1|R2)(\\d+)I(\\d+)")
+    return regex.findAll(command).map { m ->
+        Triple(m.groupValues[1], m.groupValues[2].toIntOrNull() ?: 0, m.groupValues[3].toLongOrNull() ?: 500L)
+    }.toList()
+}
+
+/** 通过当前连接方式发送轴控制指令字符串（含前缀/尾缀或 Handy 线性协议）。 */
+private suspend fun sendAxisCommand(context: android.content.Context, axisCommand: String): Boolean {
+    if (axisCommand.isEmpty()) return false
+    val connType = getConnectionType(context)
+    if (connType != ConnectionType.UDP && connType != ConnectionType.TCP &&
+        connType != ConnectionType.Serial && connType != ConnectionType.BluetoothSerial &&
+        connType != ConnectionType.TheHandy && connType != ConnectionType.JoyPlay
+    ) return false
+    return withContext(Dispatchers.IO) {
+        when (connType) {
+            ConnectionType.UDP -> {
+                val prefix = getSendFormatPrefix(context)
+                val suffix = getSendFormatSuffix(context)
+                sendUdpMessage(getDeviceIp(context), getDevicePort(context), prefix + axisCommand + suffix)
+            }
+            ConnectionType.TCP -> {
+                val prefix = getSendFormatPrefix(context)
+                val suffix = getSendFormatSuffix(context)
+                sendTcpMessage(getDeviceIp(context), getDevicePort(context), prefix + axisCommand + suffix)
+            }
+            ConnectionType.Serial -> {
+                val prefix = getSendFormatPrefix(context)
+                val suffix = getSendFormatSuffix(context)
+                sendSerialMessage(context, getSerialDeviceId(context), getBaudRate(context), prefix + axisCommand + suffix)
+            }
+            ConnectionType.BluetoothSerial -> {
+                val prefix = getSendFormatPrefix(context)
+                val suffix = getSendFormatSuffix(context)
+                sendBluetoothSerialMessage(context, getBtSerialDeviceAddress(context), prefix + axisCommand + suffix)
+            }
+            ConnectionType.TheHandy -> {
+                val axisId = getHandyAxis(context)
+                val segment = parseAxisCommandSegments(axisCommand).firstOrNull { it.first == axisId } ?: return@withContext false
+                val (_, pos, dur) = segment
+                val ranges = getAxisRanges(context)
+                val (minR, maxR) = ranges[axisId] ?: (0f to 100f)
+                val t = (pos.coerceIn(0, 100) / 100f)
+                val mappedFloat = minR + t * (maxR - minR)
+                val position = (mappedFloat / 100.0).coerceIn(0.0, 1.0)
+                val payload = buildHandyLinearPayloadFromPosition(context, axisId, position, dur.toInt())
+                if (payload != null) HandyBleClient.write(context, getHandyDeviceAddress(context), payload) else false
+            }
+            ConnectionType.JoyPlay -> {
+                val prefix = getSendFormatPrefix(context)
+                val suffix = getSendFormatSuffix(context)
+                val message = prefix + axisCommand + suffix
+                HandyBleClient.write(context, getJoyPlayDeviceAddress(context), message.toByteArray(Charsets.UTF_8), useWriteWithResponse = false)
+            }
+            else -> false
+        }
+    }
+}
+
+/** 从单轴目标位置与时长构建 Handy 线性指令（用于设备控制滑块）。 */
+private fun buildHandyLinearPayloadFromPosition(
+    context: android.content.Context,
+    axisId: String,
+    position: Double,
+    durationMs: Int
+): ByteArray? {
+    val vector = Handyplug.LinearCmd.Vector.newBuilder()
+        .setIndex(0)
+        .setDuration(durationMs.coerceIn(1, 65535))
+        .setPosition(position.coerceIn(0.0, 1.0))
+        .build()
+    val linearCmd = Handyplug.LinearCmd.newBuilder()
+        .setId(1)
+        .setDeviceIndex(0)
+        .addVectors(vector)
+        .build()
+    val handyMsg = Handyplug.HandyMessage.newBuilder()
+        .setLinearCmd(linearCmd)
+        .build()
+    return Handyplug.Payload.newBuilder()
+        .addMessages(handyMsg)
+        .build()
+        .toByteArray()
+}
+
 /** 按时间分段计算某轴的运动强度（每段内位置变化量之和，归一化 0f..1f），segmentCount 为时间分段数 */
 private fun computeAxisHeatmap(actions: List<FunscriptAction>, totalMs: Long, segmentCount: Int): FloatArray {
     if (totalMs <= 0 || segmentCount <= 0) return FloatArray(0)
@@ -318,6 +554,13 @@ private fun computeAxisHeatmap(actions: List<FunscriptAction>, totalMs: Long, se
 private const val PREFS_NAME = "funplayer_settings"
 private const val KEY_VIDEO_LIBRARY_URI = "video_library_uri"
 private const val KEY_VIDEO_LIBRARY_DISPLAY_NAME = "video_library_display_name"
+private const val KEY_VIDEO_LIBRARY_SOURCE = "video_library_source" // "local" | "nas"
+private const val KEY_NAS_HOST = "nas_host"
+private const val KEY_NAS_SHARE = "nas_share"
+private const val KEY_NAS_USER = "nas_user"
+private const val KEY_NAS_PASSWORD = "nas_password"
+private const val KEY_NAS_PORT = "nas_port"
+private const val KEY_NAS_SUBPATH = "nas_subpath"
 private const val KEY_VIDEO_TAGS = "video_tags"
 private const val KEY_DEVELOPER_MODE = "developer_mode"
 
@@ -335,12 +578,33 @@ private const val KEY_AXIS_RANGES = "axis_ranges"
 private const val KEY_HANDY_KEY = "handy_connection_key"
 private const val KEY_HANDY_AXIS = "handy_axis"
 private const val KEY_HANDY_DEVICE_ADDRESS = "handy_device_address"
+private const val KEY_JOYPLAY_DEVICE_ADDRESS = "joyplay_device_address"
 private const val KEY_BT_SERIAL_DEVICE_ADDRESS = "bt_serial_device_address"
 private const val KEY_APP_LANGUAGE = "app_language"
 
 private val HANDY_SERVICE_UUID: UUID = UUID.fromString("4fafc201-1fb5-459e-8fcc-c5c9c331914b")
 private val HANDY_CHARACTERISTIC_UUID: UUID = UUID.fromString("beb5483e-36e1-4688-b7f5-ea07361b26a8")
 private val BT_SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+
+/** 开发者模式下的 Log 条目 */
+private data class DevLogEntry(val time: Long, val tag: String, val msg: String)
+
+/** 开发者模式 Log 缓冲，悬浮窗口读取并显示 */
+private object DevLog {
+    private const val MAX_ENTRIES = 500
+    val entries = mutableStateListOf<DevLogEntry>()
+    fun log(tag: String, msg: String) {
+        android.util.Log.d(tag, msg)
+        synchronized(entries) {
+            entries.add(DevLogEntry(System.currentTimeMillis(), tag, msg))
+            while (entries.size > MAX_ENTRIES) entries.removeAt(0)
+        }
+    }
+
+    fun clear() {
+        synchronized(entries) { entries.clear() }
+    }
+}
 
 private fun getIsDeveloperMode(context: android.content.Context): Boolean =
     context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
@@ -435,6 +699,10 @@ private fun getHandyDeviceAddress(context: android.content.Context): String =
     context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
         .getString(KEY_HANDY_DEVICE_ADDRESS, "") ?: ""
 
+private fun getJoyPlayDeviceAddress(context: android.content.Context): String =
+    context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        .getString(KEY_JOYPLAY_DEVICE_ADDRESS, "") ?: ""
+
 private fun getBtSerialDeviceAddress(context: android.content.Context): String =
     context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
         .getString(KEY_BT_SERIAL_DEVICE_ADDRESS, "") ?: ""
@@ -460,7 +728,8 @@ private fun saveConnectionSettings(
     btSerialDeviceAddress: String = "",
     handyDeviceAddress: String = "",
     handyKey: String = "",
-    handyAxis: String = "L0"
+    handyAxis: String = "L0",
+    joyPlayDeviceAddress: String = ""
 ) {
     context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).edit()
         .putBoolean(KEY_CONNECTION_ENABLED, connectionEnabled)
@@ -475,6 +744,7 @@ private fun saveConnectionSettings(
         .putString(KEY_HANDY_DEVICE_ADDRESS, handyDeviceAddress)
         .putString(KEY_HANDY_KEY, handyKey)
         .putString(KEY_HANDY_AXIS, handyAxis)
+        .putString(KEY_JOYPLAY_DEVICE_ADDRESS, joyPlayDeviceAddress)
         .apply()
 }
 
@@ -603,6 +873,8 @@ private object HandyBleClient {
     private var txCharacteristic: BluetoothGattCharacteristic? = null
     private var connectedAddress: String? = null
     private var pendingWrite: kotlinx.coroutines.CompletableDeferred<Boolean>? = null
+    /** 协商后的 MTU，用于无响应写入分片；默认 23（BLE 最小值），onMtuChanged 后更新 */
+    private var negotiatedMtu: Int = 23
 
     private fun hasPermission(context: android.content.Context, permission: String): Boolean {
         return ContextCompat.checkSelfPermission(context, permission) == android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -614,122 +886,230 @@ private object HandyBleClient {
         txCharacteristic = null
         connectedAddress = null
         pendingWrite = null
+        negotiatedMtu = 23
     }
 
-    suspend fun write(context: android.content.Context, address: String, payload: ByteArray): Boolean {
-        if (address.isBlank() || payload.isEmpty()) return false
-        if (Build.VERSION.SDK_INT >= 31 && !hasPermission(context, Manifest.permission.BLUETOOTH_CONNECT)) return false
-        val ok = ensureConnected(context, address)
+    /** @param useWriteWithResponse false 时仅用无响应写入（JoyPlay 方式不需要带响应） */
+    suspend fun write(context: android.content.Context, address: String, payload: ByteArray, useWriteWithResponse: Boolean = true): Boolean {
+        if (address.isBlank() || payload.isEmpty()) {
+            DevLog.log("Handy", "连接/写入失败: 设备地址为空或载荷为空")
+            return false
+        }
+        if (Build.VERSION.SDK_INT >= 31 && !hasPermission(context, Manifest.permission.BLUETOOTH_CONNECT)) {
+            DevLog.log("Handy", "连接失败: 缺少 BLUETOOTH_CONNECT 权限")
+            return false
+        }
+        val forJoyPlay = !useWriteWithResponse
+        val ok = ensureConnected(context, address, forJoyPlay)
         if (!ok) return false
-        val g = gatt ?: return false
-        val ch = txCharacteristic ?: return false
-        return writeChunked(g, ch, payload)
+        val g = gatt
+        val ch = txCharacteristic
+        if (g == null || ch == null) {
+            DevLog.log("Handy", "写入失败: GATT 或特征为空，连接可能已断开")
+            return false
+        }
+        // The Handy 时连接后稍作延迟再写；JoyPlay 与 eciot 一致不延迟
+        if (useWriteWithResponse) kotlinx.coroutines.delay(150L)
+        val written = writeChunked(g, ch, payload, useWriteWithResponse)
+        if (!written) DevLog.log("Handy", "写入失败: 未完成或超时")
+        return written
     }
 
-    private suspend fun ensureConnected(context: android.content.Context, address: String): Boolean {
+    /** @param forJoyPlay true 时与 eciot_bletool 一致：connectGatt 不传 TRANSPORT_LE */
+    private suspend fun ensureConnected(context: android.content.Context, address: String, forJoyPlay: Boolean = false): Boolean {
         if (gatt != null && txCharacteristic != null && connectedAddress == address) return true
         closeInternal()
 
-        val manager = context.getSystemService(android.content.Context.BLUETOOTH_SERVICE) as? BluetoothManager ?: return false
-        val adapter = manager.adapter ?: return false
+        val manager = context.getSystemService(android.content.Context.BLUETOOTH_SERVICE) as? BluetoothManager
+        if (manager == null) {
+            DevLog.log("Handy", "连接失败: 无法获取 BluetoothManager")
+            return false
+        }
+        val adapter = manager.adapter
+        if (adapter == null) {
+            DevLog.log("Handy", "连接失败: 蓝牙适配器不可用")
+            return false
+        }
         val device: BluetoothDevice = try {
             adapter.getRemoteDevice(address)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            DevLog.log("Handy", "连接失败: 无效设备地址 $address, ${e.message}")
             return false
         }
 
-        val result = withTimeoutOrNull(12_000L) {
-            kotlinx.coroutines.suspendCancellableCoroutine<Boolean> { cont ->
-                val callback = object : BluetoothGattCallback() {
-                    private var finished = false
+        /** 单次连接尝试：先直连(false)，可选 autoConnect。超时 25 秒以兼容慢速机型；forJoyPlay 时与 eciot 一致不传 TRANSPORT_LE */
+        suspend fun tryConnect(autoConnect: Boolean): Boolean? {
+            return withTimeoutOrNull(25_000L) {
+                kotlinx.coroutines.suspendCancellableCoroutine<Boolean> { cont ->
+                    val callback = object : BluetoothGattCallback() {
+                        private var finished = false
 
-                    private fun finish(value: Boolean) {
-                        if (finished) return
-                        finished = true
-                        cont.resume(value)
+                        private fun finish(value: Boolean) {
+                            if (finished) return
+                            finished = true
+                            cont.resume(value)
+                        }
+
+                        override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
+                            if (status == BluetoothGatt.GATT_SUCCESS && mtu > 0) {
+                                negotiatedMtu = mtu
+                                DevLog.log("Handy", "MTU 协商: $mtu")
+                            }
+                        }
+
+                        override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
+                            if (status != BluetoothGatt.GATT_SUCCESS) {
+                                DevLog.log("Handy", "连接失败: onConnectionStateChange status=$status (非 GATT_SUCCESS)")
+                                closeInternal()
+                                finish(false)
+                                return
+                            }
+                            if (newState == BluetoothProfile.STATE_CONNECTED) {
+                                try { g.requestMtu(247) } catch (_: Exception) { }
+                                g.discoverServices()
+                            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                                if (finished) DevLog.log("Handy", "BLE 连接已断开，下次发送将自动重连")
+                                else DevLog.log("Handy", "连接断开: STATE_DISCONNECTED")
+                                closeInternal()
+                                finish(false)
+                            }
+                        }
+
+                        override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
+                            if (status != BluetoothGatt.GATT_SUCCESS) {
+                                DevLog.log("Handy", "连接失败: onServicesDiscovered status=$status (非 GATT_SUCCESS)")
+                                closeInternal()
+                                finish(false)
+                                return
+                            }
+                            val service: BluetoothGattService? = g.getService(HANDY_SERVICE_UUID)
+                            val ch: BluetoothGattCharacteristic? = service?.getCharacteristic(HANDY_CHARACTERISTIC_UUID)
+                            if (ch == null) {
+                                DevLog.log("Handy", "连接失败: 未找到 Handy 服务或特征 UUID (Service=$HANDY_SERVICE_UUID, Char=$HANDY_CHARACTERISTIC_UUID)")
+                                closeInternal()
+                                finish(false)
+                                return
+                            }
+                            txCharacteristic = ch
+                            finish(true)
+                        }
+
+                        override fun onCharacteristicWrite(g: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+                            if (status != BluetoothGatt.GATT_SUCCESS) {
+                                DevLog.log("Handy", "写入回调: status=$status (非 GATT_SUCCESS)")
+                            }
+                            pendingWrite?.complete(status == BluetoothGatt.GATT_SUCCESS)
+                            pendingWrite = null
+                        }
                     }
 
-                    override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
-                        if (status != BluetoothGatt.GATT_SUCCESS) {
-                            closeInternal()
-                            finish(false)
-                            return
-                        }
-                        if (newState == BluetoothProfile.STATE_CONNECTED) {
-                            try { g.requestMtu(247) } catch (_: Exception) { }
-                            g.discoverServices()
-                        } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                            closeInternal()
-                            finish(false)
-                        }
+                    @Suppress("DEPRECATION")
+                    val g = if (forJoyPlay) {
+                        device.connectGatt(context, autoConnect, callback)
+                    } else if (Build.VERSION.SDK_INT >= 23) {
+                        device.connectGatt(context, autoConnect, callback, BluetoothDevice.TRANSPORT_LE)
+                    } else {
+                        device.connectGatt(context, autoConnect, callback)
                     }
+                    gatt = g
+                    connectedAddress = address
 
-                    override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
-                        if (status != BluetoothGatt.GATT_SUCCESS) {
-                            closeInternal()
-                            finish(false)
-                            return
-                        }
-                        val service: BluetoothGattService? = g.getService(HANDY_SERVICE_UUID)
-                        val ch: BluetoothGattCharacteristic? = service?.getCharacteristic(HANDY_CHARACTERISTIC_UUID)
-                        if (ch == null) {
-                            closeInternal()
-                            finish(false)
-                            return
-                        }
-                        txCharacteristic = ch
-                        finish(true)
+                    cont.invokeOnCancellation {
+                        closeInternal()
                     }
-
-                    override fun onCharacteristicWrite(g: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
-                        pendingWrite?.complete(status == BluetoothGatt.GATT_SUCCESS)
-                        pendingWrite = null
-                    }
-                }
-
-                @Suppress("DEPRECATION")
-                val g = if (Build.VERSION.SDK_INT >= 23) {
-                    device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
-                } else {
-                    device.connectGatt(context, false, callback)
-                }
-                gatt = g
-                connectedAddress = address
-
-                cont.invokeOnCancellation {
-                    closeInternal()
                 }
             }
+        }
+
+        var result = tryConnect(autoConnect = false)
+        if (result != true) {
+            DevLog.log("Handy", "首次连接未成功，关闭后重试一次(直连)")
+            closeInternal()
+            kotlinx.coroutines.delay(500L)
+            result = tryConnect(autoConnect = false)
+        }
+        if (result != true) {
+            DevLog.log("Handy", "直连两次未成，尝试后台连接(autoConnect=true)")
+            closeInternal()
+            kotlinx.coroutines.delay(300L)
+            result = tryConnect(autoConnect = true)
+        }
+        if (result != true) {
+            DevLog.log("Handy", "连接失败: 连接超时(25s)或未完成，已尝试直连与后台连接")
         }
         return result == true
     }
 
-    private suspend fun writeChunked(g: BluetoothGatt, ch: BluetoothGattCharacteristic, payload: ByteArray): Boolean {
-        // 保守分片，避免默认 MTU 下写入失败；如已协商更大 MTU，会更稳。
-        val chunkSize = 180
-        var offset = 0
-        while (offset < payload.size) {
-            val end = (offset + chunkSize).coerceAtMost(payload.size)
-            val chunk = payload.copyOfRange(offset, end)
-            val ok = writeOnce(g, ch, chunk)
-            if (!ok) return false
-            offset = end
-        }
-        return true
-    }
-
-    @Suppress("DEPRECATION")
-    private suspend fun writeOnce(g: BluetoothGatt, ch: BluetoothGattCharacteristic, bytes: ByteArray): Boolean {
-        val deferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
-        pendingWrite = deferred
-        ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-        ch.value = bytes
-        val started = try { g.writeCharacteristic(ch) } catch (_: Exception) { false }
-        if (!started) {
-            pendingWrite = null
+    /** 整包一次写入，不分片。JoyPlay(useWriteWithResponse=false) 与 eciot 一致：仅无响应、不等回调、不重试；The Handy 先带响应再无响应+重试 */
+    private suspend fun writeChunked(g: BluetoothGatt, ch: BluetoothGattCharacteristic, payload: ByteArray, useWriteWithResponse: Boolean): Boolean {
+        if (!useWriteWithResponse) return writeOnceNoResponseEciotStyle(g, ch, payload)
+        suspend fun tryWriteNoRsp(data: ByteArray, index: Int): Boolean {
+            var delayMs = 80L
+            repeat(4) { attempt ->
+                if (attempt > 0) kotlinx.coroutines.delay(delayMs).also { delayMs = (delayMs * 2).coerceAtMost(400L) }
+                if (writeOnceNoResponse(g, ch, data, index)) return true
+            }
             return false
         }
-        return withTimeoutOrNull(5_000L) { deferred.await() } ?: false
+        if (writeOnceWithResponse(g, ch, payload, 1)) return true
+        return tryWriteNoRsp(payload, 1)
+    }
+
+    /** 与 eciot_bletool 一致：setValue → writeType NO_RESPONSE → writeCharacteristic，立即返回，不等回调、不重试 */
+    @Suppress("DEPRECATION")
+    private fun writeOnceNoResponseEciotStyle(g: BluetoothGatt, ch: BluetoothGattCharacteristic, bytes: ByteArray): Boolean {
+        ch.value = bytes
+        ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+        return try {
+            g.writeCharacteristic(ch)
+        } catch (e: Exception) {
+            DevLog.log("Handy", "写入失败(JoyPlay/eciot): ${e.message}")
+            false
+        }
+    }
+
+    /** 与 JoyPlay 参考 control(cmd) 一致：单包时用「带响应写入」writeValue，更接近 Web/常见实现 */
+    @Suppress("DEPRECATION")
+    private suspend fun writeOnceWithResponse(g: BluetoothGatt, ch: BluetoothGattCharacteristic, bytes: ByteArray, chunkIndex: Int = 0): Boolean {
+        ch.value = bytes
+        ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        val started = try { g.writeCharacteristic(ch) } catch (e: Exception) {
+            DevLog.log("Handy", "写入(带响应)失败(第${chunkIndex}包): ${e.message}")
+            return false
+        }
+        if (!started) return false
+        val deferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
+        pendingWrite = deferred
+        val ok = kotlinx.coroutines.withTimeoutOrNull(800L) { deferred.await() }
+        pendingWrite = null
+        return ok == true
+    }
+
+    /** 与 eciot_bletool 一致：先 setValue 再设置 writeType，再 writeCharacteristic；部分机型顺序或队列敏感 */
+    @Suppress("DEPRECATION")
+    private suspend fun writeOnceNoResponse(g: BluetoothGatt, ch: BluetoothGattCharacteristic, bytes: ByteArray, chunkIndex: Int = 0): Boolean {
+        ch.value = bytes
+        ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+        val started = try { g.writeCharacteristic(ch) } catch (e: Exception) {
+            DevLog.log("Handy", "写入失败(第${chunkIndex}包): writeCharacteristic 异常 ${e.message} → 判断: 发不出去")
+            return false
+        }
+        if (!started) {
+            DevLog.log("Handy", "写入失败(第${chunkIndex}包): writeCharacteristic 返回 false → 判断: 发不出去(可能 MTU 过大或队列满)")
+            return false
+        }
+        // 等待 onCharacteristicWrite 再发下一包，避免部分机型队列满导致连续 false；若超时未回调则视为已发出（部分机型 NO_RESPONSE 不回调）
+        val deferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
+        pendingWrite = deferred
+        val ok = kotlinx.coroutines.withTimeoutOrNull(500L) {
+            deferred.await()
+        }
+        pendingWrite = null
+        when {
+            ok == true -> return true
+            ok == false -> { DevLog.log("Handy", "写入(第${chunkIndex}包): status 非 GATT_SUCCESS"); return false }
+            else -> { /* 超时未回调，部分栈对 NO_RESPONSE 不回调，视为已发出 */ return true }
+        }
     }
 }
 
@@ -767,7 +1147,7 @@ private suspend fun sendConnectionTest(context: android.content.Context): Boolea
     val connType = getConnectionType(context)
     if (connType != ConnectionType.UDP && connType != ConnectionType.TCP &&
         connType != ConnectionType.Serial && connType != ConnectionType.BluetoothSerial &&
-        connType != ConnectionType.TheHandy) return false
+        connType != ConnectionType.TheHandy && connType != ConnectionType.JoyPlay) return false
     return when (connType) {
         ConnectionType.UDP -> {
             val prefix = getSendFormatPrefix(context)
@@ -792,6 +1172,12 @@ private suspend fun sendConnectionTest(context: android.content.Context): Boolea
         ConnectionType.TheHandy -> {
             val payload = buildHandyTestPayload()
             HandyBleClient.write(context, getHandyDeviceAddress(context), payload)
+        }
+        ConnectionType.JoyPlay -> {
+            val prefix = getSendFormatPrefix(context)
+            val suffix = getSendFormatSuffix(context)
+            val message = prefix + CONNECTION_TEST_MESSAGE + suffix
+            HandyBleClient.write(context, getJoyPlayDeviceAddress(context), message.toByteArray(Charsets.UTF_8), useWriteWithResponse = false)
         }
         else -> false
     }
@@ -823,12 +1209,228 @@ private fun getStoredVideoLibraryDisplayName(context: android.content.Context): 
     context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
         .getString(KEY_VIDEO_LIBRARY_DISPLAY_NAME, null)
 
+private fun getVideoLibrarySource(context: android.content.Context): String =
+    context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        .getString(KEY_VIDEO_LIBRARY_SOURCE, "local") ?: "local"
+
+private fun setVideoLibrarySource(context: android.content.Context, source: String) {
+    context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).edit()
+        .putString(KEY_VIDEO_LIBRARY_SOURCE, source).apply()
+}
+
+private fun getNasHost(context: android.content.Context): String =
+    context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).getString(KEY_NAS_HOST, "") ?: ""
+private fun getNasShare(context: android.content.Context): String =
+    context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).getString(KEY_NAS_SHARE, "") ?: ""
+private fun getNasUser(context: android.content.Context): String =
+    context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).getString(KEY_NAS_USER, "") ?: ""
+private fun getNasPassword(context: android.content.Context): String =
+    context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).getString(KEY_NAS_PASSWORD, "") ?: ""
+private fun getNasPort(context: android.content.Context): Int =
+    context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).getString(KEY_NAS_PORT, "445")?.toIntOrNull() ?: 445
+private fun getNasSubpath(context: android.content.Context): String =
+    context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).getString(KEY_NAS_SUBPATH, "") ?: ""
+
 private fun saveVideoLibrary(context: android.content.Context, uri: android.net.Uri, displayName: String?) {
-    context.contentResolver.takePersistableUriPermission(uri, FLAG_GRANT_READ_URI_PERMISSION)
+    context.contentResolver.takePersistableUriPermission(uri, FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
     context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).edit()
         .putString(KEY_VIDEO_LIBRARY_URI, uri.toString())
         .putString(KEY_VIDEO_LIBRARY_DISPLAY_NAME, displayName ?: uri.lastPathSegment ?: context.getString(R.string.unknown))
+        .putString(KEY_VIDEO_LIBRARY_SOURCE, "local")
         .apply()
+}
+
+/** 通过 SMB 列出指定路径下的子文件夹名称（仅目录）。路径为空或 "/" 表示共享根目录。 */
+private suspend fun listSmbFolders(
+    host: String,
+    share: String,
+    user: String,
+    password: String,
+    port: Int,
+    subpath: String
+): Result<List<String>> = withContext(Dispatchers.IO) {
+    runCatching {
+        val path = subpath.trim().trimStart('/')
+        val pathPart = if (path.isEmpty()) "" else "$path/"
+        val auth = when {
+            user.isNotEmpty() && password.isNotEmpty() -> {
+                val encUser = java.net.URLEncoder.encode(user, "UTF-8")
+                val encPass = java.net.URLEncoder.encode(password, "UTF-8")
+                "$encUser:$encPass@"
+            }
+            else -> ""
+        }
+        val url = "smb://$auth$host:$port/$share/$pathPart"
+        val smbFile = SmbFile(url)
+        if (!smbFile.exists() || !smbFile.isDirectory()) return@runCatching emptyList<String>()
+        smbFile.listFiles()
+            ?.filter { it.isDirectory() && !it.name.equals(".", true) && !it.name.equals("..", true) }
+            ?.map { it.name }
+            ?.sorted()
+            ?: emptyList()
+    }
+}
+
+/** 构建 SMB 基础 URL（不含末尾斜杠的目录路径），auth 已编码。 */
+private fun buildSmbBaseUrl(host: String, share: String, user: String, password: String, port: Int, pathPart: String): String {
+    val auth = when {
+        user.isNotEmpty() && password.isNotEmpty() -> {
+            val encUser = java.net.URLEncoder.encode(user, "UTF-8")
+            val encPass = java.net.URLEncoder.encode(password, "UTF-8")
+            "$encUser:$encPass@"
+        }
+        else -> ""
+    }
+    return "smb://$auth$host:$port/$share/$pathPart"
+}
+
+/**
+ * 从 NAS SMB 路径递归扫描视频文件，返回 VideoItem 列表。
+ * uri 为 SMB 地址（如 smb://host/share/path/video.mp4），时长在 NAS 上暂不解析填 ""。
+ */
+private suspend fun collectVideosFromSmb(
+    context: android.content.Context,
+    host: String,
+    share: String,
+    user: String,
+    password: String,
+    port: Int,
+    subpath: String
+): List<VideoItem> = withContext(Dispatchers.IO) {
+    val list = mutableListOf<VideoItem>()
+    val path = subpath.trim().trimStart('/')
+    val pathPart = if (path.isEmpty()) "" else "$path/"
+    val baseUrl = buildSmbBaseUrl(host, share, user, password, port, pathPart)
+    var id = 0
+    fun walk(dirUrl: String) {
+        runCatching {
+            val smbDir = SmbFile(dirUrl)
+            if (!smbDir.exists() || !smbDir.isDirectory()) return@runCatching
+            smbDir.listFiles()?.forEach { file ->
+                val name = file.name ?: return@forEach
+                if (name.equals(".", true) || name.equals("..", true)) return@forEach
+                if (file.isDirectory()) {
+                    val base = dirUrl.trimEnd('/')
+                    val childUrl = "$base/$name/"
+                    walk(childUrl)
+                } else {
+                    val ext = name.substringAfterLast('.', "").lowercase()
+                    if (ext in VIDEO_EXTENSIONS) {
+                        val base = dirUrl.trimEnd('/')
+                        val videoUrl = "$base/$name"
+                        if (!videoUrl.startsWith("smb://")) return@forEach
+                        val baseName = name.substringBeforeLast(".")
+                        val parentUrl = videoUrl.substringBeforeLast("/") + "/"
+                        val siblingFiles = runCatching {
+                            SmbFile(parentUrl).listFiles()?.filter { !it.isDirectory() }?.map { it.name to it.url.toString() }?.toMap() ?: emptyMap()
+                        }.getOrNull() ?: emptyMap()
+                        val multiMap = mutableMapOf<String, String>()
+                        for ((axisId, suffix) in MULTI_FUNSCRIPT_AXIS_SUFFIXES) {
+                            val fileName = if (suffix == null) "$baseName.funscript" else "$baseName.$suffix.funscript"
+                            siblingFiles[fileName]?.let { multiMap[axisId] = it }
+                        }
+                        val singleFile = siblingFiles["$baseName.funscript"]
+                        val (scriptUri, urisByAxis) = if (multiMap.size > 1) {
+                            Pair(multiMap["L0"] ?: multiMap.values.first(), multiMap)
+                        } else {
+                            Pair(singleFile, null)
+                        }
+                        val tagFileUri = siblingFiles["$baseName.tag"]
+                        list.add(VideoItem(
+                            id = id++,
+                            name = name,
+                            duration = "",
+                            tags = emptyList(),
+                            uri = videoUrl,
+                            funscriptUri = scriptUri,
+                            funscriptUrisByAxis = urisByAxis,
+                            tagFileUri = tagFileUri,
+                            parentFolderUri = parentUrl
+                        ))
+                    }
+                }
+            }
+        }
+    }
+    walk(baseUrl)
+    val savedTags = loadAllTags(context)
+    list.map { item ->
+        val tags = item.tagFileUri?.let { loadTagsFromSmbTagFile(it) } ?: savedTags[item.uri] ?: emptyList()
+        item.copy(tags = tags)
+    }
+}
+
+/** 从 SMB 上的 .tag 文件读取标签（URI 为 smb://...）。 */
+private fun loadTagsFromSmbTagFile(smbTagUri: String): List<String>? {
+    return try {
+        val smbFile = SmbFile(smbTagUri)
+        if (!smbFile.exists()) return null
+        smbFile.inputStream.use { stream ->
+            val json = stream.reader(Charsets.UTF_8).readText()
+            val root = JSONObject(json)
+            root.optJSONArray("tags")?.let { arr ->
+                (0 until arr.length()).map { arr.getString(it) }
+            } ?: emptyList()
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun saveNasSettings(
+    context: android.content.Context,
+    host: String,
+    share: String,
+    user: String,
+    password: String,
+    port: Int,
+    subpath: String
+) {
+    context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).edit()
+        .putString(KEY_VIDEO_LIBRARY_SOURCE, "nas")
+        .putString(KEY_NAS_HOST, host)
+        .putString(KEY_NAS_SHARE, share)
+        .putString(KEY_NAS_USER, user)
+        .putString(KEY_NAS_PASSWORD, password)
+        .putString(KEY_NAS_PORT, port.toString())
+        .putString(KEY_NAS_SUBPATH, subpath)
+        .apply()
+}
+
+// ================== .tag 文件格式（每视频一个文件，与视频同目录） ==================
+// 文件名：视频名.tag，例如 卡路里.mp4 对应 卡路里.tag
+// 内容：JSON，UTF-8
+//   {
+//     "version": 1,
+//     "tags": ["标签1", "标签2"]
+//   }
+// version 保留扩展用；tags 为字符串数组，顺序可保留。若存在 .tag 文件则优先使用，否则回退到 SharedPreferences。
+
+private const val TAG_FILE_VERSION = 1
+
+private fun loadTagsFromTagFile(context: android.content.Context, tagFileUri: String?): List<String>? {
+    if (tagFileUri == null) return null
+    return try {
+        val uri = android.net.Uri.parse(tagFileUri)
+        val json = context.contentResolver.openInputStream(uri)?.reader(Charsets.UTF_8)?.use { it.readText() } ?: return null
+        val root = JSONObject(json)
+        root.optJSONArray("tags")?.let { arr ->
+            (0 until arr.length()).map { arr.getString(it) }
+        } ?: emptyList()
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun saveTagsToTagFile(context: android.content.Context, tagFileUri: String?, tags: List<String>): Boolean {
+    if (tagFileUri == null) return false
+    return try {
+        val uri = android.net.Uri.parse(tagFileUri)
+        val root = JSONObject().put("version", TAG_FILE_VERSION).put("tags", JSONArray(tags))
+        context.contentResolver.openOutputStream(uri, "w")?.writer(Charsets.UTF_8)?.use { it.write(root.toString()) } != null
+    } catch (_: Exception) {
+        false
+    }
 }
 
 /** 从 SharedPreferences 读取所有视频的标签（key 为视频 uri） */
@@ -847,9 +1449,24 @@ private fun loadAllTags(context: android.content.Context): Map<String, List<Stri
     }
 }
 
-/** 保存某个视频的标签（以 uri 为 key） */
-private fun saveTagsForVideo(context: android.content.Context, uri: String?, tags: List<String>) {
-    if (uri == null) return
+/** 保存某个视频的标签：优先写入 .tag 文件（存在则写，不存在则尝试在同目录创建），并回写 SharedPreferences 以兼容列表展示。 */
+private fun saveTagsForVideo(context: android.content.Context, video: VideoItem, tags: List<String>) {
+    val uri = video.uri ?: return
+    val tagFileUriToUse = video.tagFileUri ?: run {
+        // 先查找同目录是否已有 视频名.tag，避免多次保存时重复 createFile 产生多个文件
+        val parentUri = video.parentFolderUri ?: return@run null
+        val baseName = video.name.substringBeforeLast(".")
+        val parent = DocumentFile.fromTreeUri(context, android.net.Uri.parse(parentUri)) ?: return@run null
+        val existing = parent.findFile("$baseName.tag")
+        if (existing != null) existing.uri.toString()
+        else {
+            val created = parent.createFile("application/octet-stream", "$baseName.tag") ?: return@run null
+            created.uri.toString()
+        }
+    }
+    if (tagFileUriToUse != null) {
+        saveTagsToTagFile(context, tagFileUriToUse, tags)
+    }
     val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
     val current = loadAllTags(context).toMutableMap()
     current[uri] = tags
@@ -862,16 +1479,83 @@ private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "webm", "m4v", 
 
 private const val THUMBNAIL_WIDTH = 320
 private const val THUMBNAIL_HEIGHT = 180
+/** NAS/SMB 视频为获取封面和时长时，最多拷贝到本地的字节数（避免大文件长时间下载） */
+private const val SMB_TEMP_COPY_LIMIT = 20L * 1024 * 1024  // 20 MB
+
+/** NAS 方式下封面、时长、脚本等数据的软件内存缓存，获取完成后复用避免重复拉取 */
+private object NasDataCache {
+    private const val THUMBNAIL_CACHE_BYTES = 15 * 1024 * 1024  // 约 15MB 封面
+    private const val DURATION_CACHE_MAX_ENTRIES = 500
+    private const val FUNSCRIPT_CACHE_MAX_ENTRIES = 100
+
+    val thumbnailCache = object : LruCache<String, Bitmap>(THUMBNAIL_CACHE_BYTES) {
+        override fun sizeOf(key: String, value: Bitmap): Int {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) value.byteCount else value.width * value.height * 4
+        }
+    }
+    val durationCache = LruCache<String, String>(DURATION_CACHE_MAX_ENTRIES)
+    private val funscriptCache = object : LinkedHashMap<String, FunscriptData>(FUNSCRIPT_CACHE_MAX_ENTRIES + 1, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, FunscriptData>?) = size > FUNSCRIPT_CACHE_MAX_ENTRIES
+    }
+    @Synchronized fun getFunscript(key: String): FunscriptData? = funscriptCache[key]
+    @Synchronized fun putFunscript(key: String, data: FunscriptData) { funscriptCache[key] = data }
+}
+
+/**
+ * 将 SMB 文件拷贝到临时文件，最多拷贝 maxBytes 字节（0 表示不限制）。
+ * 返回临时文件，调用方负责在不用时删除；失败返回 null。
+ */
+private fun copySmbToTempFile(smbUri: String, maxBytes: Long = SMB_TEMP_COPY_LIMIT): File? {
+    return try {
+        val smbFile = SmbFile(smbUri)
+        if (!smbFile.exists() || smbFile.isDirectory) return null
+        val suffix = smbUri.substringAfterLast('.', "mp4").take(4)
+        val tempFile = File.createTempFile("smb_video_", ".$suffix")
+        smbFile.inputStream.use { input ->
+            FileOutputStream(tempFile).use { output ->
+                val buffer = ByteArray(64 * 1024)
+                var copied: Long = 0
+                while (copied < maxBytes || maxBytes <= 0) {
+                    val n = input.read(buffer)
+                    if (n <= 0) break
+                    output.write(buffer, 0, n)
+                    copied += n
+                }
+            }
+        }
+        tempFile
+    } catch (_: Exception) {
+        null
+    }
+}
 
 private fun loadVideoFirstFrame(context: android.content.Context, uriString: String): Bitmap? {
-    val uri = android.net.Uri.parse(uriString)
+    if (uriString.startsWith("smb:", ignoreCase = true)) {
+        NasDataCache.thumbnailCache.get(uriString)?.let { return it }
+    }
     val retriever = MediaMetadataRetriever()
     return try {
-        retriever.setDataSource(context, uri)
-        val frame = retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: return null  // 1 秒处取帧
-        val scaled = Bitmap.createScaledBitmap(frame, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT, true)
-        if (frame != scaled) frame.recycle()
-        scaled
+        if (uriString.startsWith("smb:", ignoreCase = true)) {
+            val tempFile = copySmbToTempFile(uriString)
+            if (tempFile == null) return null
+            try {
+                retriever.setDataSource(tempFile.absolutePath)
+                val frame = retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: return null
+                val scaled = Bitmap.createScaledBitmap(frame, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT, true)
+                if (frame != scaled) frame.recycle()
+                NasDataCache.thumbnailCache.put(uriString, scaled)
+                scaled
+            } finally {
+                tempFile.delete()
+            }
+        } else {
+            val uri = android.net.Uri.parse(uriString)
+            retriever.setDataSource(context, uri)
+            val frame = retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: return null
+            val scaled = Bitmap.createScaledBitmap(frame, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT, true)
+            if (frame != scaled) frame.recycle()
+            scaled
+        }
     } catch (_: Exception) {
         null
     } finally {
@@ -879,22 +1563,47 @@ private fun loadVideoFirstFrame(context: android.content.Context, uriString: Str
     }
 }
 
-/** 从视频 URI 读取时长（毫秒），格式化为 "M:SS" 或 "H:MM:SS"，失败返回 "0:00" */
+/** 从视频 URI 读取时长（毫秒），格式化为 "M:SS" 或 "H:MM:SS"，失败返回 "0:00"。支持 content URI 与 smb:// */
 private fun getVideoDurationFormatted(context: android.content.Context, uri: android.net.Uri): String {
+    return getVideoDurationFormattedFromUri(context, uri.toString())
+}
+
+/** 从视频 URI 字符串获取格式化时长，支持 content 与 smb://；NAS 会先拷贝到临时文件再解析，结果写入内存缓存 */
+private fun getVideoDurationFormattedFromUri(context: android.content.Context, uriString: String): String {
+    if (uriString.startsWith("smb:", ignoreCase = true)) {
+        NasDataCache.durationCache.get(uriString)?.let { return it }
+    }
     val retriever = MediaMetadataRetriever()
     return try {
-        retriever.setDataSource(context, uri)
-        val ms = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-        val totalSec = (ms / 1000).toInt().coerceAtLeast(0)
-        val h = totalSec / 3600
-        val m = (totalSec % 3600) / 60
-        val s = totalSec % 60
-        if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+        val result = if (uriString.startsWith("smb:", ignoreCase = true)) {
+            val tempFile = copySmbToTempFile(uriString)
+            if (tempFile == null) return "0:00"
+            try {
+                retriever.setDataSource(tempFile.absolutePath)
+                formatDurationFromRetriever(retriever)
+            } finally {
+                tempFile.delete()
+            }
+        } else {
+            retriever.setDataSource(context, android.net.Uri.parse(uriString))
+            formatDurationFromRetriever(retriever)
+        }
+        if (uriString.startsWith("smb:", ignoreCase = true)) NasDataCache.durationCache.put(uriString, result)
+        result
     } catch (_: Exception) {
         "0:00"
     } finally {
         retriever.release()
     }
+}
+
+private fun formatDurationFromRetriever(retriever: MediaMetadataRetriever): String {
+    val ms = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+    val totalSec = (ms / 1000).toInt().coerceAtLeast(0)
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
 private fun collectVideosFromTree(context: android.content.Context, treeUri: android.net.Uri): List<VideoItem> {
@@ -911,15 +1620,35 @@ private fun collectVideosFromTree(context: android.content.Context, treeUri: and
                     val uri = file.uri.toString()
                     val duration = getVideoDurationFormatted(context, file.uri)
                     val baseName = name.substringBeforeLast(".")
-                    val funscriptFile = file.parentFile?.listFiles()?.find { it.name == "$baseName.funscript" }
-                    val funscriptUri = funscriptFile?.uri?.toString()
+                    val siblingFiles = file.parentFile?.listFiles() ?: emptyArray()
+                    // 多脚本：每个轴一个文件（如 video.funscript + video.surge.funscript）；合并脚本：一个文件含多轴（video.funscript 内带 axes 或 actions）
+                    val multiMap = mutableMapOf<String, String>()
+                    for ((axisId, suffix) in MULTI_FUNSCRIPT_AXIS_SUFFIXES) {
+                        val fileName = if (suffix == null) "$baseName.funscript" else "$baseName.$suffix.funscript"
+                        val found = siblingFiles.find { it.name == fileName }
+                        if (found != null) multiMap[axisId] = found.uri.toString()
+                    }
+                    val singleFile = siblingFiles.find { it.name == "$baseName.funscript" }?.uri?.toString()
+                    val (scriptUri, urisByAxis) = if (multiMap.size > 1) {
+                        // 存在至少两个轴文件 -> 多脚本方式（各轴分开）
+                        Pair(multiMap["L0"] ?: multiMap.values.first(), multiMap)
+                    } else {
+                        // 仅有一个 baseName.funscript 或没有 -> 单文件合并脚本方式（由 loadFunscriptFromUri 解析 axes/actions）
+                        Pair(singleFile, null)
+                    }
+                    val tagFile = siblingFiles.find { it.name == "$baseName.tag" }
+                    val tagFileUri = tagFile?.uri?.toString()
+                    val parentFolderUri = file.parentFile?.uri?.toString()
                     list.add(VideoItem(
                         id = id++,
                         name = name,
                         duration = duration,
                         tags = emptyList(),
                         uri = uri,
-                        funscriptUri = funscriptUri
+                        funscriptUri = scriptUri,
+                        funscriptUrisByAxis = urisByAxis,
+                        tagFileUri = tagFileUri,
+                        parentFolderUri = parentFolderUri
                     ))
                 }
             }
@@ -927,7 +1656,14 @@ private fun collectVideosFromTree(context: android.content.Context, treeUri: and
     }
     walk(tree)
     val savedTags = loadAllTags(context)
-    return list.map { it.copy(tags = savedTags[it.uri] ?: emptyList()) }
+    return list.map { item ->
+        val tags = if (item.tagFileUri != null) {
+            loadTagsFromTagFile(context, item.tagFileUri) ?: savedTags[item.uri] ?: emptyList()
+        } else {
+            savedTags[item.uri] ?: emptyList()
+        }
+        item.copy(tags = tags)
+    }
 }
 
 // ================== 顶层应用 ==================
@@ -939,32 +1675,59 @@ fun VideoApp(
     ) {
 
     val context = LocalContext.current
+    var isDeveloperMode by remember { mutableStateOf(getIsDeveloperMode(context)) }
     var videos by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    var currentTab by remember { mutableStateOf(MainTab.Home) }
+    var currentScreen by remember { mutableStateOf<Screen>(Screen.Main) }
+    var searchText by remember { mutableStateOf("") }
+    var selectedTags by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showLogWindow by remember { mutableStateOf(false) }
 
-    // 启动时若已设定视频库路径，则自动扫描，不再显示示例视频
     LaunchedEffect(Unit) {
-        val uri = getStoredVideoLibraryUri(context)
-        if (uri != null) {
-            val list = withContext(Dispatchers.IO) {
-                collectVideosFromTree(context, android.net.Uri.parse(uri))
+        if (isDeveloperMode) DevLog.log("App", "开发者模式已开启，可点击 Log 悬浮窗查看日志")
+    }
+    // 启动时根据视频库来源自动扫描：本地用 Document tree URI，NAS 用 SMB 参数
+    LaunchedEffect(Unit) {
+        when (getVideoLibrarySource(context)) {
+            "local" -> {
+                val uri = getStoredVideoLibraryUri(context)
+                if (uri != null) {
+                    val list = withContext(Dispatchers.IO) {
+                        collectVideosFromTree(context, android.net.Uri.parse(uri))
+                    }
+                    videos = list
+                }
             }
-            videos = list
+            "nas" -> {
+                val host = getNasHost(context)
+                val share = getNasShare(context)
+                if (host.isNotBlank() && share.isNotBlank()) {
+                    val list = withContext(Dispatchers.IO) {
+                        collectVideosFromSmb(
+                            context,
+                            host,
+                            share,
+                            getNasUser(context),
+                            getNasPassword(context),
+                            getNasPort(context),
+                            getNasSubpath(context)
+                        )
+                    }
+                    videos = list
+                }
+            }
+            else -> { }
         }
     }
 
-    var currentTab by remember { mutableStateOf(MainTab.Home) }
-    var currentScreen by remember { mutableStateOf<Screen>(Screen.Main) }
-
-    var searchText by remember { mutableStateOf("") }
-    var selectedTags by remember { mutableStateOf<Set<String>>(emptySet()) }
-
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
-    ) {
-        when (val screen = currentScreen) {
-            is Screen.Main -> {
-                MainScaffold(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            when (val screen = currentScreen) {
+                is Screen.Main -> {
+                    MainScaffold(
                     currentTab = currentTab,
                     onTabSelected = { currentTab = it },
                     videos = videos,
@@ -981,7 +1744,8 @@ fun VideoApp(
                     },
                     isDarkTheme = isDarkTheme,
                     onThemeChange = onThemeChange,
-                    onVideosUpdate = { videos = it }
+                    onVideosUpdate = { videos = it },
+                    onDeveloperModeChange = { isDeveloperMode = it }
                 )
             }
 
@@ -995,11 +1759,100 @@ fun VideoApp(
                             videos = videos.map {
                                 if (it.id == video.id) it.copy(tags = newTags) else it
                             }
-                            saveTagsForVideo(context, video.uri, newTags)
+                            saveTagsForVideo(context, video, newTags)
                         }
                     )
                 } else {
                     currentScreen = Screen.Main
+                }
+            }
+        }
+        }
+
+        if (isDeveloperMode) {
+            if (showLogWindow) {
+                DevLogOverlay(
+                    onClose = { showLogWindow = false },
+                    onClear = { DevLog.clear() },
+                    modifier = Modifier.zIndex(999f)
+                )
+            } else {
+                FloatingActionButton(
+                    onClick = { showLogWindow = true },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp)
+                        .zIndex(998f),
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ) {
+                    Text(stringResource(R.string.dev_log_fab), fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DevLogOverlay(
+    onClose: () -> Unit,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val listState = rememberLazyListState()
+    val entries = DevLog.entries
+    LaunchedEffect(entries.size) {
+        if (entries.isNotEmpty()) listState.animateScrollToItem(entries.size - 1)
+    }
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))
+            .padding(24.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(R.string.dev_log_title),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onClear) {
+                        Text(stringResource(R.string.dev_log_clear))
+                    }
+                    TextButton(onClick = onClose) {
+                        Text(stringResource(R.string.dev_log_close))
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+            ) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    items(entries.size, key = { it }) { i ->
+                        val e = entries.getOrNull(i) ?: return@items
+                        Text(
+                            text = "${android.text.format.DateFormat.format("HH:mm:ss.SSS", e.time)} [${e.tag}] ${e.msg}",
+                            fontSize = 11.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             }
         }
@@ -1021,7 +1874,8 @@ private fun MainScaffold(
     onVideoClick: (Int) -> Unit,
     isDarkTheme: Boolean,
     onThemeChange: (Boolean) -> Unit,
-    onVideosUpdate: (List<VideoItem>) -> Unit
+    onVideosUpdate: (List<VideoItem>) -> Unit,
+    onDeveloperModeChange: (Boolean) -> Unit
 ) {
     Scaffold(
         bottomBar = {
@@ -1042,7 +1896,8 @@ private fun MainScaffold(
                 MainTab.Settings -> AppSettingsScreen(
                     isDarkTheme = isDarkTheme,
                     onThemeChange = onThemeChange,
-                    onVideosScanned = onVideosUpdate
+                    onVideosScanned = onVideosUpdate,
+                    onDeveloperModeChange = onDeveloperModeChange
                 )
             }
         }
@@ -1262,6 +2117,7 @@ private fun VideoCard(
 ) {
     val context = LocalContext.current
     var thumbnail by remember(video.uri) { mutableStateOf<Bitmap?>(null) }
+    var loadedDuration by remember(video.uri) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(video.uri) {
         if (video.uri != null) {
@@ -1269,6 +2125,14 @@ private fun VideoCard(
             thumbnail = b
         }
     }
+    LaunchedEffect(video.uri) {
+        if (video.uri != null && video.duration.isEmpty() && video.uri.startsWith("smb:", ignoreCase = true)) {
+            val dur = withContext(Dispatchers.IO) { getVideoDurationFormattedFromUri(context, video.uri) }
+            loadedDuration = dur
+        }
+    }
+
+    val displayDuration = video.duration.ifEmpty { loadedDuration ?: "…" }
 
     Column(
         modifier = Modifier
@@ -1310,7 +2174,7 @@ private fun VideoCard(
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = stringResource(R.string.duration_format, video.duration),
+            text = stringResource(R.string.duration_format, displayDuration),
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1369,7 +2233,14 @@ private fun VideoPlayerEmbed(
 
     val exoPlayer = remember(videoUri) {
         ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(android.net.Uri.parse(videoUri)))
+            if (videoUri.startsWith("smb:", ignoreCase = true)) {
+                val mediaItem = MediaItem.fromUri(android.net.Uri.parse(videoUri))
+                val mediaSource = ProgressiveMediaSource.Factory(SmbDataSource.Factory())
+                    .createMediaSource(mediaItem)
+                setMediaSource(mediaSource)
+            } else {
+                setMediaItem(MediaItem.fromUri(android.net.Uri.parse(videoUri)))
+            }
             prepare()
             playWhenReady = false  // 进入详情页不自动播放
         }
@@ -1468,18 +2339,33 @@ private fun VideoDetailScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var showDeleteMode by remember { mutableStateOf(false) }
     var newTagText by remember { mutableStateOf("") }
+    var loadedDuration by remember(video.uri) { mutableStateOf<String?>(null) }
 
-    var funscriptData by remember(video.funscriptUri) { mutableStateOf<FunscriptData?>(null) }
-    var funscriptHeatmaps by remember(video.funscriptUri) { mutableStateOf<Map<String, FloatArray>?>(null) }
-    var playbackPositionMs by remember { mutableStateOf(0L) }
-    LaunchedEffect(video.funscriptUri) {
-        val uri = video.funscriptUri
-        if (uri == null) {
-            funscriptData = null
-            funscriptHeatmaps = null
-            return@LaunchedEffect
+    LaunchedEffect(video.uri) {
+        if (video.uri != null && video.duration.isEmpty() && video.uri.startsWith("smb:", ignoreCase = true)) {
+            val dur = withContext(Dispatchers.IO) { getVideoDurationFormattedFromUri(context, video.uri) }
+            loadedDuration = dur
         }
-        val data = withContext(Dispatchers.IO) { loadFunscriptFromUri(context, uri) } ?: run {
+    }
+    val detailDisplayDuration = video.duration.ifEmpty { loadedDuration ?: "…" }
+
+    val scriptKey = video.funscriptUri to video.funscriptUrisByAxis
+    var funscriptData by remember(scriptKey) { mutableStateOf<FunscriptData?>(null) }
+    var funscriptHeatmaps by remember(scriptKey) { mutableStateOf<Map<String, FloatArray>?>(null) }
+    var playbackPositionMs by remember { mutableStateOf(0L) }
+    LaunchedEffect(video.funscriptUri, video.funscriptUrisByAxis) {
+        val multiUris = video.funscriptUrisByAxis
+        val data = if (multiUris != null && multiUris.isNotEmpty()) {
+            withContext(Dispatchers.IO) { loadFunscriptMultiFromUris(context, multiUris) }
+        } else {
+            val uri = video.funscriptUri
+            if (uri == null) {
+                funscriptData = null
+                funscriptHeatmaps = null
+                return@LaunchedEffect
+            }
+            withContext(Dispatchers.IO) { loadFunscriptFromUri(context, uri) }
+        } ?: run {
             funscriptData = null
             funscriptHeatmaps = null
             return@LaunchedEffect
@@ -1508,7 +2394,8 @@ private fun VideoDetailScreen(
             connType != ConnectionType.TCP &&
             connType != ConnectionType.Serial &&
             connType != ConnectionType.BluetoothSerial &&
-            connType != ConnectionType.TheHandy
+            connType != ConnectionType.TheHandy &&
+            connType != ConnectionType.JoyPlay
         ) return@LaunchedEffect
         withContext(Dispatchers.IO) {
             when (connType) {
@@ -1537,6 +2424,12 @@ private fun VideoDetailScreen(
                     if (payload != null) {
                         HandyBleClient.write(context, getHandyDeviceAddress(context), payload)
                     }
+                }
+                ConnectionType.JoyPlay -> {
+                    val prefix = getSendFormatPrefix(context)
+                    val suffix = getSendFormatSuffix(context)
+                    val message = prefix + axisCommandForSend + suffix
+                    HandyBleClient.write(context, getJoyPlayDeviceAddress(context), message.toByteArray(Charsets.UTF_8), useWriteWithResponse = false)
                 }
                 else -> { }
             }
@@ -1641,7 +2534,7 @@ private fun VideoDetailScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = stringResource(R.string.video_duration_format, video.duration),
+                text = stringResource(R.string.video_duration_format, detailDisplayDuration),
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1764,7 +2657,10 @@ private fun VideoDetailScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = stringResource(if (video.funscriptUri == null) R.string.no_script else R.string.script_loading),
+                        text = stringResource(
+                            if (video.funscriptUri == null && video.funscriptUrisByAxis.isNullOrEmpty())
+                                R.string.no_script else R.string.script_loading
+                        ),
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1838,7 +2734,8 @@ private enum class ConnectionType(@StringRes val nameResId: Int) {
     BluetoothSerial(R.string.bt_serial_connection),
     TCP(R.string.tcp_connection),
     UDP(R.string.udp_connection),
-    TheHandy(R.string.handy_connection)
+    TheHandy(R.string.handy_connection),
+    JoyPlay(R.string.joyplay_connection)
 }
 
 private val AXIS_NAMES = listOf("L0", "L1", "L2", "R0", "R1", "R2")
@@ -1856,21 +2753,34 @@ private fun DeviceSettingsScreen() {
     var handyDeviceExpanded by remember { mutableStateOf(false) }
     var handyDeviceOptions by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var handyScanTick by remember { mutableStateOf(0) }
+    var joyPlayScanTick by remember { mutableStateOf(0) }
+    var joyPlayScanning by remember { mutableStateOf(false) }
+    var pendingBleScan by remember { mutableStateOf<ConnectionType?>(null) }
 
     val handyPermLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
         val granted = grants.values.all { it }
         if (granted) {
-            handyScanTick++
+            when (pendingBleScan) {
+                ConnectionType.TheHandy -> handyScanTick++
+                ConnectionType.JoyPlay -> joyPlayScanTick++
+                else -> { }
+            }
+            pendingBleScan = null
         } else {
             Toast.makeText(context, context.getString(R.string.bt_scan_permission_denied), Toast.LENGTH_SHORT).show()
         }
     }
 
+    // 与 eciot_bletool 一致：BLE 扫描需蓝牙权限；Android 6–11 需定位，部分 12+ 机型也需定位才有扫描结果
     fun handyRequiredPermissions(): Array<String> {
         return if (Build.VERSION.SDK_INT >= 31) {
-            arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+            arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
         } else {
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
         }
@@ -1885,55 +2795,21 @@ private fun DeviceSettingsScreen() {
     fun handyStartScan() {
         if (handyScanning) return
         if (!handyHasAllPermissions()) {
+            pendingBleScan = ConnectionType.TheHandy
             handyPermLauncher.launch(handyRequiredPermissions())
             return
         }
         handyScanTick++
     }
 
-    LaunchedEffect(handyScanTick) {
-        if (handyScanTick <= 0) return@LaunchedEffect
-        if (Build.VERSION.SDK_INT >= 31 &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) != android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            return@LaunchedEffect
+    fun joyPlayStartScan() {
+        if (joyPlayScanning) return
+        if (!handyHasAllPermissions()) {
+            pendingBleScan = ConnectionType.JoyPlay
+            handyPermLauncher.launch(handyRequiredPermissions())
+            return
         }
-        val manager = context.getSystemService(android.content.Context.BLUETOOTH_SERVICE) as? BluetoothManager
-        val scanner = manager?.adapter?.bluetoothLeScanner ?: return@LaunchedEffect
-
-        handyScanning = true
-        handyDeviceOptions = emptyList()
-
-        val filter = ScanFilter.Builder()
-            .setServiceUuid(ParcelUuid(HANDY_SERVICE_UUID))
-            .build()
-        val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-            .build()
-
-        val callback = object : ScanCallback() {
-            override fun onScanResult(callbackType: Int, result: ScanResult) {
-                val dev = result.device ?: return
-                val address = dev.address ?: return
-                val name = dev.name ?: result.scanRecord?.deviceName ?: "The Handy"
-                val display = "$name ($address)"
-                activity?.runOnUiThread {
-                    handyDeviceOptions = (handyDeviceOptions + (display to address))
-                        .distinctBy { it.second }
-                        .sortedBy { it.first }
-                }
-            }
-        }
-
-        try {
-            scanner.startScan(listOf(filter), settings, callback)
-            delay(5_000L)
-        } catch (_: Exception) {
-            // ignore
-        } finally {
-            try { scanner.stopScan(callback) } catch (_: Exception) { }
-            handyScanning = false
-        }
+        joyPlayScanTick++
     }
 
     var connectionEnabled by remember { mutableStateOf(getConnectionEnabled(context)) }
@@ -1952,11 +2828,64 @@ private fun DeviceSettingsScreen() {
     var handyAxis by remember { mutableStateOf(getHandyAxis(context)) }
     var handyAxisExpanded by remember { mutableStateOf(false) }
     var handyDeviceAddress by remember { mutableStateOf(getHandyDeviceAddress(context)) }
+    var handyBondedOptions by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var handyKey by remember { mutableStateOf(getHandyKey(context)) }
+    var joyPlayDeviceAddress by remember { mutableStateOf(getJoyPlayDeviceAddress(context)) }
+    var joyPlayDeviceExpanded by remember { mutableStateOf(false) }
+    var joyPlayDeviceOptions by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var joyPlayBondedOptions by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var sendFormatPrefix by remember { mutableStateOf(getSendFormatPrefix(context)) }
     var sendFormatSuffix by remember { mutableStateOf(getSendFormatSuffix(context)) }
+    var connectionDetailsExpanded by remember { mutableStateOf(true) }
+    var outputRangeExpanded by remember { mutableStateOf(true) }
+    var deviceControlExpanded by remember { mutableStateOf(true) }
+    var manualAxisPositions by remember { mutableStateOf(AXIS_NAMES.associateWith { 50 }) }
+    var sliderSendJob by remember { mutableStateOf<Job?>(null) }
+    var selectedScriptUris by remember { mutableStateOf<List<String>>(emptyList()) }
+    var selectedScriptName by remember { mutableStateOf<String?>(null) }
+    var standaloneScriptData by remember { mutableStateOf<FunscriptData?>(null) }
+    var scriptPlayPositionMs by remember { mutableStateOf(0L) }
+    var scriptPlaying by remember { mutableStateOf(false) }
+    var scriptPlayJob by remember { mutableStateOf<Job?>(null) }
 
-    LaunchedEffect(connectionEnabled, connectionType, ipAddress, port, sendFormatPrefix, sendFormatSuffix, serialDeviceId, baudRate, btSerialDeviceAddress, handyAxis, handyKey, handyDeviceAddress) {
+    val scriptPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (!uris.isNullOrEmpty()) {
+            selectedScriptUris = uris.map { it.toString() }
+            selectedScriptName = if (uris.size == 1) {
+                DocumentFile.fromSingleUri(context, uris[0])?.name ?: uris[0].lastPathSegment?.substringAfterLast('/') ?: context.getString(R.string.unknown)
+            } else {
+                context.getString(R.string.device_control_multi_script_format, uris.size)
+            }
+            standaloneScriptData = null
+            scriptPlayPositionMs = 0L
+        }
+    }
+    LaunchedEffect(selectedScriptUris) {
+        if (selectedScriptUris.isEmpty()) {
+            standaloneScriptData = null
+            scriptPlayPositionMs = 0L
+            return@LaunchedEffect
+        }
+        val data = if (selectedScriptUris.size == 1) {
+            withContext(Dispatchers.IO) { loadFunscriptFromUri(context, selectedScriptUris[0]) }
+        } else {
+            val urisByAxis = mutableMapOf<String, String>()
+            for (uriStr in selectedScriptUris) {
+                val name = DocumentFile.fromSingleUri(context, android.net.Uri.parse(uriStr))?.name ?: uriStr.substringAfterLast('/')
+                if (!name.endsWith(".funscript", ignoreCase = true)) continue
+                val rest = name.removeSuffix(".funscript").removeSuffix(".FUNSCRIPT")
+                val axisId = if ('.' in rest) rest.substringAfterLast('.') else "L0"
+                urisByAxis[axisId] = uriStr
+            }
+            if (urisByAxis.isEmpty()) null else withContext(Dispatchers.IO) { loadFunscriptMultiFromUris(context, urisByAxis) }
+        }
+        standaloneScriptData = data
+        scriptPlayPositionMs = 0L
+    }
+
+    LaunchedEffect(connectionEnabled, connectionType, ipAddress, port, sendFormatPrefix, sendFormatSuffix, serialDeviceId, baudRate, btSerialDeviceAddress, handyAxis, handyKey, handyDeviceAddress, joyPlayDeviceAddress) {
         saveConnectionSettings(
             context,
             connectionEnabled,
@@ -1970,8 +2899,167 @@ private fun DeviceSettingsScreen() {
             btSerialDeviceAddress,
             handyDeviceAddress,
             handyKey,
-            handyAxis
+            handyAxis,
+            joyPlayDeviceAddress
         )
+    }
+
+    // Handy 模式：预加载已配对设备（与蓝牙串口一致），便于在 BLE 扫不到时仍能选到已配对的 Handy
+    LaunchedEffect(connectionType) {
+        if (connectionType == ConnectionType.TheHandy) {
+            if (Build.VERSION.SDK_INT >= 31 &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                handyBondedOptions = emptyList()
+                return@LaunchedEffect
+            }
+            val manager = context.getSystemService(android.content.Context.BLUETOOTH_SERVICE) as? BluetoothManager
+            val bonded = manager?.adapter?.bondedDevices?.toList().orEmpty()
+            handyBondedOptions = bonded
+                .mapNotNull { dev ->
+                    val addr = dev.address ?: return@mapNotNull null
+                    val name = (dev.name?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: context.getString(R.string.bluetooth_device))
+                    name to addr
+                }
+                .distinctBy { it.second }
+                .sortedBy { it.first }
+            if (handyDeviceOptions.isEmpty()) handyDeviceOptions = handyBondedOptions
+        }
+        if (connectionType == ConnectionType.JoyPlay) {
+            if (Build.VERSION.SDK_INT >= 31 &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                joyPlayBondedOptions = emptyList()
+                return@LaunchedEffect
+            }
+            val manager = context.getSystemService(android.content.Context.BLUETOOTH_SERVICE) as? BluetoothManager
+            val bonded = manager?.adapter?.bondedDevices?.toList().orEmpty()
+            joyPlayBondedOptions = bonded
+                .mapNotNull { dev ->
+                    val addr = dev.address ?: return@mapNotNull null
+                    val name = (dev.name?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: context.getString(R.string.bluetooth_device))
+                    name to addr
+                }
+                .distinctBy { it.second }
+                .sortedBy { it.first }
+            if (joyPlayDeviceOptions.isEmpty()) joyPlayDeviceOptions = joyPlayBondedOptions
+        }
+    }
+
+    LaunchedEffect(handyScanTick) {
+        if (handyScanTick <= 0) return@LaunchedEffect
+        if (Build.VERSION.SDK_INT >= 31 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            return@LaunchedEffect
+        }
+        val manager = context.getSystemService(android.content.Context.BLUETOOTH_SERVICE) as? BluetoothManager
+        val scanner = manager?.adapter?.bluetoothLeScanner ?: return@LaunchedEffect
+
+        handyScanning = true
+        // 保留已配对设备，再叠加 BLE 扫描结果（避免只显示“未扫描到设备”）
+        handyDeviceOptions = handyBondedOptions
+
+        val settings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .build()
+
+        val callback = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult) {
+                val dev = result.device ?: return
+                val address = dev.address ?: return
+                val name = (dev.name ?: result.scanRecord?.deviceName ?: "").trim()
+                if (name.isEmpty()) return  // 空名称设备过滤，不加入列表
+                activity?.runOnUiThread {
+                    handyDeviceOptions = (handyDeviceOptions + (name to address))
+                        .distinctBy { it.second }
+                        .sortedBy { it.first }
+                }
+            }
+        }
+
+        try {
+            scanner.startScan(null, settings, callback)
+            delay(10_000L)
+        } catch (_: Exception) {
+            // ignore
+        } finally {
+            try { scanner.stopScan(callback) } catch (_: Exception) { }
+            handyScanning = false
+        }
+    }
+
+    // 与 eciot_bletool 完全一致：BluetoothAdapter.getDefaultAdapter() + startLeScan(LeScanCallback)
+    LaunchedEffect(joyPlayScanTick) {
+        if (joyPlayScanTick <= 0) return@LaunchedEffect
+        if (Build.VERSION.SDK_INT >= 31 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            return@LaunchedEffect
+        }
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            DevLog.log("JoyPlay", "需要定位权限才能扫描 BLE")
+            return@LaunchedEffect
+        }
+        @Suppress("DEPRECATION")
+        val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+        if (bluetoothAdapter == null) {
+            DevLog.log("JoyPlay", "设备不支持蓝牙")
+            return@LaunchedEffect
+        }
+        if (!bluetoothAdapter.isEnabled) {
+            DevLog.log("JoyPlay", "请先打开蓝牙")
+            return@LaunchedEffect
+        }
+        // 与 eciot 一致：检查定位开关，未开时很多机型 BLE 扫描无结果
+        val locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE) as? LocationManager
+        val locationOn = locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
+            locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
+        if (!locationOn) {
+            DevLog.log("JoyPlay", "请打开系统定位（GPS 或网络位置）后再扫描")
+            activity?.runOnUiThread {
+                Toast.makeText(context, context.getString(R.string.ble_need_location_hint), Toast.LENGTH_LONG).show()
+            }
+        }
+
+        joyPlayScanning = true
+        joyPlayDeviceOptions = joyPlayBondedOptions
+
+        // 与 eciot_bletool 相同的 LeScanCallback，过滤空名称设备（仅显示有名称的 BLE 设备）
+        val leScanCallback = @SuppressLint("MissingPermission")
+        object : LeScanCallback {
+            override fun onLeScan(device: BluetoothDevice, rssi: Int, scanRecord: ByteArray?) {
+                try {
+                    val name = device.name?.trim() ?: ""
+                    val mac = device.address ?: return
+                    if (mac.isEmpty()) return
+                    if (name.isEmpty()) return  // 空名称设备过滤，不加入列表
+                    DevLog.log("JoyPlay", "BLE 发现: $name rssi=$rssi")
+                    activity?.runOnUiThread {
+                        joyPlayDeviceOptions = (joyPlayDeviceOptions + (name to mac))
+                            .distinctBy { it.second }
+                            .sortedBy { it.first }
+                    }
+                } catch (e: Throwable) {
+                    DevLog.log("JoyPlay", "LeScanCallback: ${e.message}")
+                }
+            }
+        }
+
+        @Suppress("DEPRECATION")
+        val started = bluetoothAdapter.startLeScan(leScanCallback)
+        DevLog.log("JoyPlay", if (started) "开始 BLE 扫描 (eciot startLeScan)..." else "startLeScan 返回 false")
+
+        try {
+            delay(12_000L)
+        } finally {
+            @Suppress("DEPRECATION")
+            bluetoothAdapter.stopLeScan(leScanCallback)
+            joyPlayScanning = false
+            DevLog.log("JoyPlay", "扫描结束，共 ${joyPlayDeviceOptions.size} 个设备")
+        }
     }
 
     var axisRanges by remember {
@@ -2030,8 +3118,25 @@ Toast.makeText(
                     Text(if (connectionTestInProgress) stringResource(R.string.connection_test_sending) else stringResource(R.string.connection_test))
                 }
             }
-            Spacer(Modifier.height(12.dp))
-            Text(stringResource(R.string.connection_type_label), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { connectionDetailsExpanded = !connectionDetailsExpanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.connection_type_label), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Icon(
+                    imageVector = if (connectionDetailsExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (connectionDetailsExpanded) "收起" else "展开"
+                )
+            }
+            AnimatedVisibility(
+                visible = connectionDetailsExpanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
             Spacer(Modifier.height(8.dp))
             ExposedDropdownMenuBox(
                 expanded = connectionExpanded,
@@ -2136,8 +3241,9 @@ Toast.makeText(
                         btSerialDeviceOptions = bonded
                             .mapNotNull { dev ->
                                 val addr = dev.address ?: return@mapNotNull null
-                                val name = dev.name ?: context.getString(R.string.bluetooth_device)
-                                "$name ($addr)" to addr
+                                val name = (dev.name?.trim()?.takeIf { it.isNotEmpty() }
+                                    ?: context.getString(R.string.bluetooth_device))
+                                name to addr
                             }
                             .distinctBy { it.second }
                             .sortedBy { it.first }
@@ -2339,12 +3445,119 @@ Toast.makeText(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+                ConnectionType.JoyPlay -> {
+                Text(stringResource(R.string.handy_bluetooth_device), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = { joyPlayStartScan() },
+                        enabled = !joyPlayScanning
+                    ) {
+                        Text(if (joyPlayScanning) stringResource(R.string.scanning) else stringResource(R.string.scan))
+                    }
+                    Text(
+                        text = if (joyPlayScanning) stringResource(R.string.scanning_devices) else "",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                ExposedDropdownMenuBox(
+                    expanded = joyPlayDeviceExpanded,
+                    onExpandedChange = { joyPlayDeviceExpanded = it }
+                ) {
+                    val selectedDisplay = joyPlayDeviceOptions.find { it.second == joyPlayDeviceAddress }?.first
+                        ?: if (joyPlayDeviceAddress.isNotEmpty()) joyPlayDeviceAddress else stringResource(R.string.select_handy_device)
+                    OutlinedTextField(
+                        readOnly = true,
+                        value = if (joyPlayDeviceOptions.isEmpty() && joyPlayDeviceAddress.isEmpty()) stringResource(R.string.handy_no_device) else selectedDisplay,
+                        onValueChange = {},
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        label = { Text(stringResource(R.string.serial_device)) },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = joyPlayDeviceExpanded) },
+                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = joyPlayDeviceExpanded,
+                        onDismissRequest = { joyPlayDeviceExpanded = false }
+                    ) {
+                        if (joyPlayDeviceOptions.isEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.handy_no_device)) },
+                                onClick = { joyPlayDeviceExpanded = false }
+                            )
+                        } else {
+                            joyPlayDeviceOptions.forEach { (display, address) ->
+                                DropdownMenuItem(
+                                    text = { Text(display) },
+                                    onClick = {
+                                        joyPlayDeviceAddress = address
+                                        joyPlayDeviceExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = joyPlayDeviceAddress,
+                    onValueChange = { joyPlayDeviceAddress = it },
+                    label = { Text(stringResource(R.string.device_address_mac)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(stringResource(R.string.mac_placeholder)) }
+                )
+                if (isDeveloperMode) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(stringResource(R.string.send_format_title), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = sendFormatPrefix,
+                        onValueChange = { sendFormatPrefix = it },
+                        label = { Text(stringResource(R.string.prefix)) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = sendFormatSuffix,
+                        onValueChange = { sendFormatSuffix = it },
+                        label = { Text(stringResource(R.string.suffix)) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                }
+            }
+                }
             }
         }
 
         // ---------- 输出范围设置 ----------
         SettingsCard(title = stringResource(R.string.output_range_settings)) {
-            Text(stringResource(R.string.output_range_title), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { outputRangeExpanded = !outputRangeExpanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.output_range_title), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Icon(
+                    imageVector = if (outputRangeExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (outputRangeExpanded) "收起" else "展开"
+                )
+            }
+            AnimatedVisibility(
+                visible = outputRangeExpanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
             Spacer(Modifier.height(8.dp))
             AXIS_NAMES.forEach { axisName ->
                 val range = axisRanges[axisName] ?: (0f to 100f)
@@ -2375,23 +3588,248 @@ Toast.makeText(
                     )
                 }
             }
+                }
+            }
+        }
+
+        // ---------- 设备控制 ----------
+        SettingsCard(title = stringResource(R.string.device_control_title)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { deviceControlExpanded = !deviceControlExpanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.device_control_axis_sliders), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Icon(
+                    imageVector = if (deviceControlExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (deviceControlExpanded) "收起" else "展开"
+                )
+            }
+            AnimatedVisibility(
+                visible = deviceControlExpanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+            Spacer(Modifier.height(8.dp))
+            AXIS_NAMES.forEach { axisName ->
+                val pos = manualAxisPositions[axisName] ?: 50
+                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("$axisName", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                        Text("${pos}%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Slider(
+                        value = pos.toFloat(),
+                        onValueChange = {
+                            manualAxisPositions = manualAxisPositions + (axisName to it.toInt())
+                            sliderSendJob?.cancel()
+                            sliderSendJob = scope.launch {
+                                while (isActive) {
+                                    val cmd = buildAxisCommandFromPositions(context, manualAxisPositions, 500L)
+                                    if (cmd.isNotEmpty()) sendAxisCommand(context, cmd)
+                                    delay(100L)
+                                }
+                            }
+                        },
+                        onValueChangeFinished = {
+                            sliderSendJob?.cancel()
+                            sliderSendJob = null
+                        },
+                        valueRange = 0f..100f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            Text(stringResource(R.string.device_control_script_section), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(onClick = { scriptPickerLauncher.launch(arrayOf("*/*")) }) {
+                    Text(stringResource(R.string.device_control_select_script))
+                }
+                Text(
+                    text = selectedScriptName ?: stringResource(R.string.device_control_no_script),
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        if (scriptPlaying) {
+                            scriptPlayJob?.cancel()
+                            scriptPlaying = false
+                        } else {
+                            val data = standaloneScriptData
+                            if (data == null) {
+                                Toast.makeText(context, context.getString(R.string.device_control_no_script), Toast.LENGTH_SHORT).show()
+                                return@OutlinedButton
+                            }
+                            val totalMs = if (data.durationSec > 0) (data.durationSec * 1000).toLong()
+                                else data.axes.flatMap { it.actions }.maxOfOrNull { it.at } ?: 1L
+                            scriptPlaying = true
+                            scriptPlayJob = scope.launch {
+                                var pos = scriptPlayPositionMs
+                                while (pos <= totalMs && isActive) {
+                                    val cmd = buildAxisCommandFromScript(context, data, pos)
+                                    if (cmd.isNotEmpty()) sendAxisCommand(context, cmd)
+                                    delay(100L)
+                                    pos += 100L
+                                    scriptPlayPositionMs = pos
+                                }
+                                scriptPlaying = false
+                            }
+                        }
+                    },
+                    enabled = standaloneScriptData != null
+                ) {
+                    Text(if (scriptPlaying) stringResource(R.string.device_control_stop_script) else stringResource(R.string.device_control_play_script))
+                }
+            }
+                }
+            }
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AppSettingsScreen(
+private fun NasFolderBrowserDialog(
+    host: String,
+    share: String,
+    user: String,
+    password: String,
+    port: Int,
+    initialSubpath: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var currentPath by remember(initialSubpath) { mutableStateOf(initialSubpath.trim().trimStart('/')) }
+    var folders by remember { mutableStateOf<List<String>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val pathSegments = remember(currentPath) { currentPath.split("/").filter { it.isNotEmpty() } }
+
+    LaunchedEffect(host, share, currentPath) {
+        if (host.isBlank() || share.isBlank()) {
+            error = "请先填写服务器地址和共享名"
+            loading = false
+            return@LaunchedEffect
+        }
+        loading = true
+        error = null
+        val result = listSmbFolders(host, share, user, password, port, currentPath)
+        loading = false
+        result.fold(
+            onSuccess = { folders = it; error = null },
+            onFailure = { error = it.message ?: "连接失败" }
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.nas_folder_browser_title)) },
+        text = {
+            Column(modifier = Modifier.widthIn(max = 320.dp)) {
+                Text(
+                    text = if (currentPath.isEmpty()) "//$host/$share" else "//$host/$share/$currentPath",
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    fontSize = 12.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            if (pathSegments.isNotEmpty()) {
+                                currentPath = pathSegments.dropLast(1).joinToString("/")
+                            }
+                        },
+                        enabled = pathSegments.isNotEmpty()
+                    ) {
+                        Text(stringResource(R.string.nas_parent_folder))
+                    }
+                    OutlinedButton(onClick = { onSelect(currentPath); onDismiss() }) {
+                        Text(stringResource(R.string.nas_select_current_folder))
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                when {
+                    loading -> Text(stringResource(R.string.nas_loading), fontSize = 14.sp)
+                    error != null -> Text(error!!, color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
+                    else -> LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.heightIn(max = 280.dp)
+                    ) {
+                        items(folders) { name ->
+                            OutlinedButton(
+                                onClick = { currentPath = if (currentPath.isEmpty()) name else "$currentPath/$name" },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppSettingsScreenImpl(
     isDarkTheme: Boolean,
     onThemeChange: (Boolean) -> Unit,
-    onVideosScanned: (List<VideoItem>) -> Unit
+    onVideosScanned: (List<VideoItem>) -> Unit,
+    onDeveloperModeChange: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var videoLibrarySource by remember { mutableStateOf(getVideoLibrarySource(context)) }
     var displayPath by remember {
-        mutableStateOf(getStoredVideoLibraryDisplayName(context) ?: getStoredVideoLibraryUri(context) ?: context.getString(R.string.unselected))
+        mutableStateOf(
+            if (getVideoLibrarySource(context) == "nas") {
+                val h = getNasHost(context)
+                val s = getNasShare(context)
+                val p = getNasSubpath(context).trim().trimStart('/')
+                if (h.isNotEmpty() && s.isNotEmpty()) "//$h/$s" + if (p.isNotEmpty()) "/$p" else ""
+                else context.getString(R.string.unselected)
+            } else {
+                getStoredVideoLibraryDisplayName(context) ?: getStoredVideoLibraryUri(context) ?: context.getString(R.string.unselected)
+            }
+        )
     }
     var isScanning by remember { mutableStateOf(false) }
+    var nasHost by remember { mutableStateOf(getNasHost(context)) }
+    var nasShare by remember { mutableStateOf(getNasShare(context)) }
+    var nasUser by remember { mutableStateOf(getNasUser(context)) }
+    var nasPassword by remember { mutableStateOf(getNasPassword(context)) }
+    var nasPortStr by remember { mutableStateOf(getNasPort(context).toString()) }
+    var nasSubpath by remember { mutableStateOf(getNasSubpath(context)) }
+    var showNasFolderBrowser by remember { mutableStateOf(false) }
+    var nasSettingsExpanded by remember { mutableStateOf(true) }
+    var nasTestInProgress by remember { mutableStateOf(false) }
 
     var showDeveloperPasswordDialog by remember { mutableStateOf(false) }
     var developerPasswordInput by remember { mutableStateOf("") }
@@ -2418,6 +3856,23 @@ private fun AppSettingsScreen(
         }
     }
 
+    // NAS 相关信息改为自动保存，无需点击保存按钮
+    LaunchedEffect(videoLibrarySource, nasHost, nasShare, nasUser, nasPassword, nasPortStr, nasSubpath) {
+        if (videoLibrarySource == "nas") {
+            saveNasSettings(
+                context,
+                nasHost.trim(),
+                nasShare.trim(),
+                nasUser.trim(),
+                nasPassword,
+                nasPortStr.toIntOrNull() ?: 445,
+                nasSubpath.trim()
+            )
+            val p = nasSubpath.trim().trimStart('/')
+            displayPath = if (nasHost.isNotEmpty() && nasShare.isNotEmpty()) "//${nasHost.trim()}/${nasShare.trim()}" + if (p.isNotEmpty()) "/$p" else "" else context.getString(R.string.unselected)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -2427,35 +3882,252 @@ private fun AppSettingsScreen(
         Text(stringResource(R.string.app_settings_title), fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
 
+        val videoLibrarySourceLocalLabel = stringResource(R.string.video_library_source_local)
+        val videoLibrarySourceNasLabel = stringResource(R.string.video_library_source_nas)
+        var videoLibrarySourceExpanded by remember { mutableStateOf(false) }
         SettingsCard(title = stringResource(R.string.video_library_path)) {
             Text(
-                text = stringResource(R.string.current_path_format, displayPath),
+                text = stringResource(R.string.current_path_format, displayPath.ifEmpty { context.getString(R.string.unselected) }),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = { folderPickerLauncher.launch(null) }
+            Spacer(Modifier.height(12.dp))
+            ExposedDropdownMenuBox(
+                expanded = videoLibrarySourceExpanded,
+                onExpandedChange = { videoLibrarySourceExpanded = it }
+            ) {
+                OutlinedTextField(
+                    readOnly = true,
+                    value = if (videoLibrarySource == "local") videoLibrarySourceLocalLabel else videoLibrarySourceNasLabel,
+                    onValueChange = {},
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(),
+                    label = { Text(stringResource(R.string.video_library_source_label)) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = videoLibrarySourceExpanded) },
+                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                )
+                ExposedDropdownMenu(
+                    expanded = videoLibrarySourceExpanded,
+                    onDismissRequest = { videoLibrarySourceExpanded = false }
                 ) {
-                    Text(stringResource(R.string.select_folder))
-                }
-                OutlinedButton(
-                    onClick = {
-                        val storedUri = getStoredVideoLibraryUri(context)
-                        if (storedUri == null) return@OutlinedButton
-                        isScanning = true
-                        scope.launch {
-                            val list = withContext(Dispatchers.IO) {
-                                collectVideosFromTree(context, android.net.Uri.parse(storedUri))
-                            }
-                            onVideosScanned(list)
-                            isScanning = false
+                    DropdownMenuItem(
+                        text = { Text(videoLibrarySourceLocalLabel) },
+                        onClick = {
+                            videoLibrarySource = "local"
+                            setVideoLibrarySource(context, "local")
+                            displayPath = getStoredVideoLibraryDisplayName(context) ?: getStoredVideoLibraryUri(context) ?: context.getString(R.string.unselected)
+                            videoLibrarySourceExpanded = false
                         }
-                    },
-                    enabled = !isScanning && getStoredVideoLibraryUri(context) != null
+                    )
+                    DropdownMenuItem(
+                        text = { Text(videoLibrarySourceNasLabel) },
+                        onClick = {
+                            videoLibrarySource = "nas"
+                            setVideoLibrarySource(context, "nas")
+                            val p = nasSubpath.trim().trimStart('/')
+                            displayPath = if (nasHost.isNotEmpty() && nasShare.isNotEmpty()) "//$nasHost/$nasShare" + if (p.isNotEmpty()) "/$p" else "" else context.getString(R.string.unselected)
+                            videoLibrarySourceExpanded = false
+                            if (nasHost.isNotBlank() && nasShare.isNotBlank()) {
+                                isScanning = true
+                                scope.launch {
+                                    val list = collectVideosFromSmb(
+                                        context,
+                                        nasHost.trim(),
+                                        nasShare.trim(),
+                                        nasUser.trim(),
+                                        nasPassword,
+                                        nasPortStr.toIntOrNull() ?: 445,
+                                        nasSubpath.trim()
+                                    )
+                                    onVideosScanned(list)
+                                    isScanning = false
+                                    Toast.makeText(context, context.getString(R.string.nas_scan_done_format, list.size), Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            if (videoLibrarySource == "local") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { folderPickerLauncher.launch(null) }) {
+                        Text(stringResource(R.string.select_folder))
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val storedUri = getStoredVideoLibraryUri(context)
+                            if (storedUri == null) return@OutlinedButton
+                            isScanning = true
+                            scope.launch {
+                                val list = withContext(Dispatchers.IO) {
+                                    collectVideosFromTree(context, android.net.Uri.parse(storedUri))
+                                }
+                                onVideosScanned(list)
+                                isScanning = false
+                            }
+                        },
+                        enabled = !isScanning && getStoredVideoLibraryUri(context) != null
+                    ) {
+                        Text(if (isScanning) stringResource(R.string.scanning) else stringResource(R.string.rescan))
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { nasSettingsExpanded = !nasSettingsExpanded },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(if (isScanning) stringResource(R.string.scanning) else stringResource(R.string.rescan))
+                    Text(
+                        stringResource(R.string.nas_connection_settings),
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp
+                    )
+                    Icon(
+                        imageVector = if (nasSettingsExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = if (nasSettingsExpanded) "收起" else "展开"
+                    )
+                }
+                if (nasSettingsExpanded) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = nasHost,
+                        onValueChange = { nasHost = it },
+                        label = { Text(stringResource(R.string.nas_server_hint)) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = nasShare,
+                        onValueChange = { nasShare = it },
+                        label = { Text(stringResource(R.string.nas_share_hint)) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = nasUser,
+                        onValueChange = { nasUser = it },
+                        label = { Text(stringResource(R.string.nas_username_hint)) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = nasPassword,
+                        onValueChange = { nasPassword = it },
+                        label = { Text(stringResource(R.string.nas_password_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = nasPortStr,
+                        onValueChange = { nasPortStr = it },
+                        label = { Text(stringResource(R.string.nas_port_hint)) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = nasSubpath,
+                            onValueChange = { nasSubpath = it },
+                            label = { Text(stringResource(R.string.nas_subpath_hint)) },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text("/Videos") }
+                        )
+                        OutlinedButton(
+                            onClick = { showNasFolderBrowser = true },
+                            enabled = nasHost.isNotBlank() && nasShare.isNotBlank()
+                        ) {
+                            Text(stringResource(R.string.nas_browse_folder))
+                        }
+                    }
+                    if (showNasFolderBrowser) {
+                        NasFolderBrowserDialog(
+                            host = nasHost.trim(),
+                            share = nasShare.trim(),
+                            user = nasUser.trim(),
+                            password = nasPassword,
+                            port = nasPortStr.toIntOrNull() ?: 445,
+                            initialSubpath = nasSubpath.trim(),
+                            onDismiss = { showNasFolderBrowser = false },
+                            onSelect = { path ->
+                                nasSubpath = path
+                                showNasFolderBrowser = false
+                                if (nasHost.isNotBlank() && nasShare.isNotBlank()) {
+                                    isScanning = true
+                                    scope.launch {
+                                        val list = collectVideosFromSmb(
+                                            context,
+                                            nasHost.trim(),
+                                            nasShare.trim(),
+                                            nasUser.trim(),
+                                            nasPassword,
+                                            nasPortStr.toIntOrNull() ?: 445,
+                                            path.trim()
+                                        )
+                                        onVideosScanned(list)
+                                        isScanning = false
+                                        Toast.makeText(context, context.getString(R.string.nas_scan_done_format, list.size), Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                if (nasTestInProgress || nasHost.isBlank() || nasShare.isBlank()) return@OutlinedButton
+                                nasTestInProgress = true
+                                scope.launch {
+                                    val result = listSmbFolders(
+                                        nasHost.trim(),
+                                        nasShare.trim(),
+                                        nasUser.trim(),
+                                        nasPassword,
+                                        nasPortStr.toIntOrNull() ?: 445,
+                                        ""
+                                    )
+                                    nasTestInProgress = false
+                                    val msg = if (result.isSuccess) context.getString(R.string.nas_test_success) else context.getString(R.string.nas_test_failed)
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            enabled = !nasTestInProgress && nasHost.isNotBlank() && nasShare.isNotBlank()
+                        ) {
+                            Text(if (nasTestInProgress) stringResource(R.string.scanning) else stringResource(R.string.nas_connection_test))
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                if (isScanning || nasHost.isBlank() || nasShare.isBlank()) return@OutlinedButton
+                                isScanning = true
+                                scope.launch {
+                                    val list = collectVideosFromSmb(
+                                        context,
+                                        nasHost.trim(),
+                                        nasShare.trim(),
+                                        nasUser.trim(),
+                                        nasPassword,
+                                        nasPortStr.toIntOrNull() ?: 445,
+                                        nasSubpath.trim()
+                                    )
+                                    onVideosScanned(list)
+                                    isScanning = false
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.nas_scan_done_format, list.size),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
+                            enabled = !isScanning && nasHost.isNotBlank() && nasShare.isNotBlank()
+                        ) {
+                            Text(if (isScanning) stringResource(R.string.scanning) else stringResource(R.string.nas_scan_folder))
+                        }
+                    }
                 }
             }
         }
@@ -2555,6 +4227,7 @@ private fun AppSettingsScreen(
                         } else {
                             isDeveloperMode = false
                             setDeveloperMode(context, false)
+                            onDeveloperModeChange(false)
                         }
                     }
                 )
@@ -2595,6 +4268,7 @@ private fun AppSettingsScreen(
                         if (developerPasswordInput == "doroplayer") {
                             isDeveloperMode = true
                             setDeveloperMode(context, true)
+                            onDeveloperModeChange(true)
                             showDeveloperPasswordDialog = false
                             developerPasswordInput = ""
                             developerPasswordError = null
@@ -2619,24 +4293,5 @@ private fun AppSettingsScreen(
                 }
             }
         )
-    }
-}
-
-@Composable
-private fun SettingsCard(
-    title: String,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 12.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(16.dp)
-    ) {
-        Text(title, fontWeight = FontWeight.SemiBold)
-        Spacer(modifier = Modifier.height(8.dp))
-        content()
     }
 }

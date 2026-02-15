@@ -35,6 +35,7 @@
     <string name="cancel">取消</string>
     <!-- 设备设置 -->
     <string name="bt_scan_permission_denied">缺少蓝牙权限，无法扫描设备</string>
+    <string name="ble_need_location_hint">请打开系统「定位」（GPS 或网络位置），否则 BLE 扫描可能无法发现设备</string>
     <string name="device_settings_title">设备设置</string>
     <string name="connection_settings">连接设置</string>
     <string name="connection_switch">连接开关</string>
@@ -48,6 +49,7 @@
     <string name="tcp_connection">TCP</string>
     <string name="udp_connection">UDP</string>
     <string name="handy_connection">The Handy</string>
+    <string name="joyplay_connection">JoyPlay</string>
     <string name="serial_device">串口设备</string>
     <string name="serial_no_device">未检测到串口设备</string>
     <string name="select_serial_device">选择串口设备</string>
@@ -73,11 +75,46 @@
     <string name="handy_key">密钥</string>
     <string name="output_range_title">各轴输出范围 0%–100%</string>
     <string name="output_range_settings">输出范围设置</string>
+    <!-- 设备控制 -->
+    <string name="device_control_title">设备控制</string>
+    <string name="device_control_axis_sliders">各轴位置（滑块）</string>
+    <string name="device_control_send_positions">发送当前位置</string>
+    <string name="device_control_script_section">单独运行脚本</string>
+    <string name="device_control_select_script">选择脚本文件</string>
+    <string name="device_control_play_script">播放脚本</string>
+    <string name="device_control_stop_script">停止</string>
+    <string name="device_control_no_script">未选择脚本</string>
+    <string name="device_control_multi_script_format">多轴 (%d 个文件)</string>
+    <string name="device_control_script_sent">指令已发送</string>
+    <string name="device_control_script_failed">发送失败</string>
     <!-- 软件设置 -->
     <string name="app_settings_title">软件设置</string>
     <string name="video_library_path">视频库路径</string>
+    <string name="video_library_source_label">视频库来源</string>
     <string name="current_path_format">当前路径：%s</string>
+    <string name="video_library_source_local">本地文件夹</string>
+    <string name="video_library_source_nas">NAS (SMB)</string>
     <string name="select_folder">选择文件夹…</string>
+    <string name="nas_server_hint">服务器地址（IP 或主机名）</string>
+    <string name="nas_share_hint">共享名</string>
+    <string name="nas_username_hint">用户名</string>
+    <string name="nas_password_hint">密码</string>
+    <string name="nas_port_hint">端口（默认 445）</string>
+    <string name="nas_subpath_hint">共享内文件夹路径（可选，如 /Videos，留空为共享根目录）</string>
+    <string name="nas_save">保存 NAS 设置</string>
+    <string name="nas_saved">NAS 设置已保存</string>
+    <string name="nas_browse_folder">选择文件夹</string>
+    <string name="nas_folder_browser_title">选择 NAS 文件夹</string>
+    <string name="nas_parent_folder">上级</string>
+    <string name="nas_select_current_folder">选择当前文件夹</string>
+    <string name="nas_loading">加载中…</string>
+    <string name="nas_error_connect">无法连接，请检查地址与凭据</string>
+    <string name="nas_connection_settings">NAS 连接设置</string>
+    <string name="nas_connection_test">连接测试</string>
+    <string name="nas_test_success">NAS 连接成功</string>
+    <string name="nas_test_failed">NAS 连接失败</string>
+    <string name="nas_scan_folder">扫描文件夹</string>
+    <string name="nas_scan_done_format">扫描完成，共 %d 个视频</string>
     <string name="rescan">重新扫描</string>
     <string name="player_settings">播放器设置</string>
     <string name="default_play_behavior">默认播放行为</string>
@@ -103,4 +140,8 @@
     <string name="unselected">未选择</string>
     <string name="usb_serial">USB 串口</string>
     <string name="bluetooth_device">蓝牙设备</string>
+    <string name="dev_log_title">Log</string>
+    <string name="dev_log_clear">清空</string>
+    <string name="dev_log_close">关闭</string>
+    <string name="dev_log_fab">Log</string>
 </resources>
