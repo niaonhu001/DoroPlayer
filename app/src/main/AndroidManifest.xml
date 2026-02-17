@@ -5,12 +5,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
-    <!-- BLE (The Handy) -->
+    <!-- BLE (The Handy / JoyPlay)，适配 Android 12 (API 31) – Android 16 (API 36) -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <!-- Android 6+ 扫描 BLE 需要定位权限；部分 Android 12+ 机型也需授予定位才有扫描结果 -->
+    <!-- Android 6–11 扫描 BLE 需定位；部分 Android 12+ 机型也需授予定位才有扫描结果 -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <!-- Android 12+ -->
+    <!-- Android 12 (API 31)+：扫描与连接需单独声明 -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" tools:targetApi="s" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" tools:targetApi="s" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />

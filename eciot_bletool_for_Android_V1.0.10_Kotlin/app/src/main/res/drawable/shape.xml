@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- shape属性-->
+<!-- rectangle矩形  oval椭圆  line横线  ring圆环 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+
+    <!-- 圆角 -->
+    <corners android:radius="0dp"/>
+
+    <!-- 填充 -->
+    <solid
+        android:color="#0ff"/>
+
+    <!-- 描边 -->
+    <!-- width设置边边的宽度 -->
+    <!-- dashWidth设置虚线的宽度 -->
+    <!-- dashGap设置虚线的间隔宽度 -->
+    <stroke
+        android:color="#000000"
+        android:width="1px"/>
+
+    <!-- 渐变 -->
+    <gradient
+        android:angle="270"
+        android:startColor="#dcdfe6"
+        android:endColor="#dcdfe6"
+        android:type="linear"/>
+
+</shape>

@@ -7,14 +7,12 @@ plugins {
 
 android {
     namespace = "com.example.funplayer"
-    compileSdk {
-        version = release(36)
-    }
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.funplayer"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 36  // Android 12–16 适配
         versionCode = 1
         versionName = "1.0"
 

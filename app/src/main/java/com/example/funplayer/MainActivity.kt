@@ -937,7 +937,7 @@ private object HandyBleClient {
             return false
         }
 
-        /** 单次连接尝试：先直连(false)，可选 autoConnect。超时 25 秒以兼容慢速机型；forJoyPlay 时与 eciot 一致不传 TRANSPORT_LE */
+        /** 单次连接尝试：先直连(false)，可选 autoConnect。超时 25 秒以兼容慢速机型； */
         suspend fun tryConnect(autoConnect: Boolean): Boolean? {
             return withTimeoutOrNull(25_000L) {
                 kotlinx.coroutines.suspendCancellableCoroutine<Boolean> { cont ->
@@ -1040,7 +1040,7 @@ private object HandyBleClient {
         return result == true
     }
 
-    /** 整包一次写入，不分片。JoyPlay(useWriteWithResponse=false) 与 eciot 一致：仅无响应、不等回调、不重试；The Handy 先带响应再无响应+重试 */
+    /** 整包一次写入，不分片。JoyPlay(useWriteWithResponse=false) ；The Handy 先带响应再无响应+重试 */
     private suspend fun writeChunked(g: BluetoothGatt, ch: BluetoothGattCharacteristic, payload: ByteArray, useWriteWithResponse: Boolean): Boolean {
         if (!useWriteWithResponse) return writeOnceNoResponseEciotStyle(g, ch, payload)
         suspend fun tryWriteNoRsp(data: ByteArray, index: Int): Boolean {
@@ -1055,7 +1055,7 @@ private object HandyBleClient {
         return tryWriteNoRsp(payload, 1)
     }
 
-    /** 与 eciot_bletool 一致：setValue → writeType NO_RESPONSE → writeCharacteristic，立即返回，不等回调、不重试 */
+    /** 立即返回，不等回调、不重试 */
     @Suppress("DEPRECATION")
     private fun writeOnceNoResponseEciotStyle(g: BluetoothGatt, ch: BluetoothGattCharacteristic, bytes: ByteArray): Boolean {
         ch.value = bytes
@@ -1085,7 +1085,7 @@ private object HandyBleClient {
         return ok == true
     }
 
-    /** 与 eciot_bletool 一致：先 setValue 再设置 writeType，再 writeCharacteristic；部分机型顺序或队列敏感 */
+    /** 部分机型顺序或队列敏感 */
     @Suppress("DEPRECATION")
     private suspend fun writeOnceNoResponse(g: BluetoothGatt, ch: BluetoothGattCharacteristic, bytes: ByteArray, chunkIndex: Int = 0): Boolean {
         ch.value = bytes
@@ -2773,7 +2773,7 @@ private fun DeviceSettingsScreen() {
         }
     }
 
-    // 与 eciot_bletool 一致：BLE 扫描需蓝牙权限；Android 6–11 需定位，部分 12+ 机型也需定位才有扫描结果
+    // BLE 权限：Android 12 (API 31)–16 需 BLUETOOTH_SCAN/CONNECT；Android 6–11 需定位，部分 12+ 机型也需定位才有扫描结果
     fun handyRequiredPermissions(): Array<String> {
         return if (Build.VERSION.SDK_INT >= 31) {
             arrayOf(
