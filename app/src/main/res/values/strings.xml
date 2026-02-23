@@ -76,6 +76,7 @@
     <string name="scanning">扫描中…</string>
     <string name="scanning_devices">正在扫描可用设备…</string>
     <string name="select_handy_device">选择蓝牙设备</string>
+    <string name="ble_disconnect_after_write">发送后断开蓝牙连接（可减少“远程断开”提示）</string>
     <string name="handy_no_device">未扫描到设备</string>
     <string name="axis">轴</string>
     <string name="handy_key">密钥</string>
