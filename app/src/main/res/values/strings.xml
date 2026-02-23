@@ -39,7 +39,8 @@
     <string name="device_settings_title">设备设置</string>
     <string name="connection_settings">连接设置</string>
     <string name="connection_switch">连接开关</string>
-    <string name="connection_test">连接测试</string>
+    <string name="connection_test">回中测试</string>
+    <string name="connection_test_tooltip">在连接开关是开时才有用，会向设备发送一个回中请求</string>
     <string name="connection_test_sent">连接测试已发送</string>
     <string name="connection_test_failed">连接测试发送失败</string>
     <string name="connection_test_sending">发送中…</string>
@@ -49,7 +50,7 @@
     <string name="tcp_connection">TCP</string>
     <string name="udp_connection">UDP</string>
     <string name="handy_connection">The Handy</string>
-    <string name="joyplay_connection">JoyPlay</string>
+    <string name="TcodeBLE">TcodeBLE</string>
     <string name="serial_device">串口设备</string>
     <string name="serial_no_device">未检测到串口设备</string>
     <string name="select_serial_device">选择串口设备</string>
@@ -62,6 +63,11 @@
     <string name="baud_rate_bt_hint">波特率（蓝牙串口一般无需设置）</string>
     <string name="ip_address">IP 地址</string>
     <string name="port_number">端口号</string>
+    <string name="mdns_discovery">mDNS 自动发现</string>
+    <string name="mdns_discovering">正在发现设备…</string>
+    <string name="mdns_no_device">未发现设备</string>
+    <string name="mdns_discovery_failed">mDNS 发现失败</string>
+    <string name="mdns_device_found">已发现设备：%s</string>
     <string name="send_format_title">发送信息文本格式</string>
     <string name="prefix">前缀</string>
     <string name="suffix">尾缀</string>
@@ -70,6 +76,7 @@
     <string name="scanning">扫描中…</string>
     <string name="scanning_devices">正在扫描可用设备…</string>
     <string name="select_handy_device">选择蓝牙设备</string>
+    <string name="ble_disconnect_after_write">发送后断开蓝牙连接（可减少“远程断开”提示）</string>
     <string name="handy_no_device">未扫描到设备</string>
     <string name="axis">轴</string>
     <string name="handy_key">密钥</string>
@@ -116,6 +123,13 @@
     <string name="nas_scan_folder">扫描文件夹</string>
     <string name="nas_scan_done_format">扫描完成，共 %d 个视频</string>
     <string name="rescan">重新扫描</string>
+    <string name="nas_discovery">搜索 SMB 服务器</string>
+    <string name="nas_discovering">正在搜索 SMB 服务器…</string>
+    <string name="nas_discovery_failed">搜索失败，请确保连接到同一网络</string>
+    <string name="nas_no_devices_found">未发现 SMB 服务器</string>
+    <string name="nas_devices_found_format">发现 %d 个 SMB 服务器</string>
+    <string name="nas_select_device">选择服务器</string>
+    <string name="nas_device_info">%1$s - %2$s</string>
     <string name="player_settings">播放器设置</string>
     <string name="default_play_behavior">默认播放行为</string>
     <string name="play_stop_example">播放完停止（示例）</string>
@@ -144,4 +158,5 @@
     <string name="dev_log_clear">清空</string>
     <string name="dev_log_close">关闭</string>
     <string name="dev_log_fab">Log</string>
+    <string name="ble_device">蓝牙设备</string>
 </resources>

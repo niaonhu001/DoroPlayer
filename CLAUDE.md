@@ -35,7 +35,7 @@ DoroPlayer 是一个基于 Android 的视频脚本播放器，与 `.funscript` �
   - UI 组合和导航
   - 视频库管理（本地/SMB）
   - 脚本解析（.funscript 文件）
-  - 设备连接处理（USB、蓝牙、TCP/UDP、The Handy、JoyPlay）
+  - 设备连接处理（USB、蓝牙、TCP/UDP、The Handy、TcodeBLE）
   - 标签管理（.tag 文件）
   - 通过 SharedPreferences 持久化设置
 
@@ -55,7 +55,7 @@ DoroPlayer 是一个基于 Android 的视频脚本播放器，与 `.funscript` �
 - 蓝牙串口（SPP/RFCOMM）
 - TCP/UDP 网络连接
 - The Handy 协议（通过 Protocol Buffers）
-- JoyPlay 协议
+- TcodeBLE 协议
 
 ### 标签系统
 

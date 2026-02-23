@@ -71,6 +71,7 @@ dependencies {
     implementation("com.google.protobuf:protobuf-java:3.25.1")
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("eu.agno3.jcifs:jcifs-ng:2.1.9")
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
     implementation(libs.material)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

@@ -3,9 +3,10 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
-    <!-- BLE (The Handy / JoyPlay)，适配 Android 12 (API 31) – Android 16 (API 36) -->
+    <!-- BLE (The Handy / TcodeBLE)，适配 Android 12 (API 31) – Android 16 (API 36) -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <!-- Android 6–11 扫描 BLE 需定位；部分 Android 12+ 机型也需授予定位才有扫描结果 -->

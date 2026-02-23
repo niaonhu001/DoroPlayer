@@ -15,7 +15,7 @@
   - **蓝牙串口**：经典蓝牙 SPP（RFCOMM）。
   - **TCP / UDP**：填写 IP 与端口。
   - **The Handy**：使用 [Handy 协议] 发送线性指令（待完善）。
-  - **JoyPlay**：JoyPlay通讯协议（可配置前缀/尾缀）。
+  - **TcodeBLE**：TcodeBLE通讯协议（可配置前缀/尾缀）。
 - **设备控制**：在设置页可单独控制各轴滑块并发送指令，或选择脚本文件（单文件/多轴多文件）单独运行，无需播放视频。
 - **连接测试**：在设备设置中提供「连接测试」按钮，用于验证当前连接是否正常。
 - **输出范围**：各轴（L0–R2）可设置 0%–100% 输出范围，脚本位置会映射到该范围后发送。
@@ -43,7 +43,7 @@
 - **DocumentFile** 扫描本地视频库
 - **Protocol Buffers**：The Handy BLE 通讯
 - **USB 串口**：[usb-serial-for-android](https://github.com/mik3y/usb-serial-for-android)
-- **蓝牙**：经典蓝牙 SPP（串口）、BLE GATT（The Handy / JoyPlay）
+- **蓝牙**：经典蓝牙 SPP（串口）、BLE GATT（The Handy / TcodeBLE）
 - **NAS**：jcifs-ng（SMB 扫描、目录浏览、.tag/.funscript 读取及 SMB 直连播放）
 
 ## 环境要求
@@ -62,7 +62,7 @@ cd DoroPlayer
 # 构建 Debug 包
 ./gradlew assembleDebug
 ```
-
+·
 在 Android Studio 中打开项目，连接设备或启动模拟器后点击 Run 即可安装运行。首次使用需在应用内选择视频库目录（或配置 NAS）并授予所需权限（存储、蓝牙等按连接方式而定）。
 
 ## 项目结构

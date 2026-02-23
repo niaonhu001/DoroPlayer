@@ -15,7 +15,7 @@ An Android video script player that syncs with `.funscript` files and sends axis
   - **Bluetooth serial**: Classic Bluetooth SPP (RFCOMM).
   - **TCP / UDP**: IP and port.
   - **The Handy**: BLE GATT using the [Handy protocol] for linear commands (to be refined).
-  - **JoyPlay**: BLE GATT, text-format axis commands with configurable prefix/suffix .
+  - **TcodeBLE**: BLE GATT, text-format axis commands with configurable prefix/suffix .
 - **Device control**: In settings you can control axis sliders and send commands, or pick a script file (single or multi-axis) to run without playing a video.
 - **Connection test**: A “Test connection” button in device settings to verify the current connection.
 - **Output range**: Each axis (L0–R2) can be limited to 0%–100%; script positions are mapped to this range before sending.
@@ -43,7 +43,7 @@ Each video can have a **same-name, same-directory** `.tag` file that stores that
 - **DocumentFile** for scanning the local video library
 - **Protocol Buffers** for The Handy BLE protocol
 - **USB serial**: [usb-serial-for-android](https://github.com/mik3y/usb-serial-for-android)
-- **Bluetooth**: Classic SPP (serial), BLE GATT (The Handy / JoyPlay)
+- **Bluetooth**: Classic SPP (serial), BLE GATT (The Handy / TcodeBLE)
 - **NAS**: jcifs-ng (SMB scan, folder browse, .tag/.funscript read, and direct SMB playback)
 
 ## Requirements

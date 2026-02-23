@@ -34,7 +34,8 @@
     <string name="device_settings_title">Device settings</string>
     <string name="connection_settings">Connection</string>
     <string name="connection_switch">Connection</string>
-    <string name="connection_test">Test connection</string>
+    <string name="connection_test">Reset test</string>
+    <string name="connection_test_tooltip">Only works when connection switch is on. Sends a reset/center request to the device.</string>
     <string name="connection_test_sent">Test sent</string>
     <string name="connection_test_failed">Test failed</string>
     <string name="connection_test_sending">Sending…</string>
@@ -44,7 +45,7 @@
     <string name="tcp_connection">TCP</string>
     <string name="udp_connection">UDP</string>
     <string name="handy_connection">The Handy</string>
-    <string name="joyplay_connection">JoyPlay</string>
+    <string name="TcodeBLE">TcodeBLE</string>
     <string name="serial_device">Serial device</string>
     <string name="serial_no_device">No serial device found</string>
     <string name="select_serial_device">Select serial device</string>
@@ -137,4 +138,5 @@
     <string name="dev_log_clear">Clear</string>
     <string name="dev_log_close">Close</string>
     <string name="dev_log_fab">Log</string>
+    <string name="ble_device">BLE Device</string>
 </resources>
