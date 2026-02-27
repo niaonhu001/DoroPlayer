@@ -1,0 +1,64 @@
+name: Android Beta Release
+
+on:
+  push:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: 📦 Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 🔓 Decode Keystore
+        run: |
+          echo "${{ secrets.SIGNING_KEY_BASE64 }}" | base64 -d > ./app/keystore.jks
+
+      - name: 🔐 Create signing properties
+        run: |
+          echo "storeFile=keystore.jks" >> signing.properties
+          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> signing.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> signing.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> signing.properties
+
+      - name: 🔑 Grant Gradle permission
+        run: chmod +x gradlew
+
+      - name: 🏗 Build Debug
+        run: ./gradlew assembleDebug
+
+      - name: 🏗 Build Release
+        run: ./gradlew assembleRelease
+
+      - name: 🏷 Force update beta tag
+        run: |
+          git tag -f beta
+          git push origin beta -f
+
+      - name: 🚀 Create/Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: beta
+          name: Beta Build
+          body: CI自动根据最新源码构建
+          prerelease: true
+          files: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew assembleDebug:*)",
+      "mcp__context7__resolve-library-id",
+      "WebSearch"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
